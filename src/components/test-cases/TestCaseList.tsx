@@ -313,10 +313,6 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 총 {currentTabCases.length}개의 테스트 케이스
               </p>
             </div>
-            <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center">
-              <PlusIcon className="h-4 w-4 mr-2" />
-              새 테스트 케이스
-            </button>
           </div>
         </div>
 
