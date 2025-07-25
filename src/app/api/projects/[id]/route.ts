@@ -3,10 +3,11 @@ import db from '@/lib/db/database';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
+    const { id } = await params;
+    const projectId = id;
 
     const project = db.prepare(`
       SELECT 
@@ -45,10 +46,11 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
+    const { id } = await params;
+    const projectId = id;
     const body = await request.json();
     const { name, description, status } = body;
 
@@ -88,10 +90,11 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
+    const { id } = await params;
+    const projectId = id;
 
     // Check if project has test cases
     const testCaseCount = db.prepare(`

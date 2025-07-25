@@ -25,16 +25,16 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description } = body;
+    const { name, description, status = 'active' } = body;
 
     // 임시로 기본 사용자 ID 사용 (개발용)
     const userId = 1;
 
     const result = db.prepare(`
       INSERT INTO projects (
-        name, description, created_by
-      ) VALUES (?, ?, ?)
-    `).run(name, description, userId);
+        name, description, status, created_by
+      ) VALUES (?, ?, ?, ?)
+    `).run(name, description, status, userId);
 
     return NextResponse.json({ 
       success: true, 
