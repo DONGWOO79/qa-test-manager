@@ -4,12 +4,14 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 interface SearchSuggestionsProps {
   query: string;
   onSuggestionSelect: (suggestion: string) => void;
+  onQueryChange: (query: string) => void;
   placeholder?: string;
 }
 
 export default function SearchSuggestions({ 
   query, 
   onSuggestionSelect, 
+  onQueryChange,
   placeholder = "검색어를 입력하세요..." 
 }: SearchSuggestionsProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -68,9 +70,21 @@ export default function SearchSuggestions({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    onQueryChange(value);
+  };
+
   const handleSuggestionClick = (suggestion: string) => {
     onSuggestionSelect(suggestion);
     setShowSuggestions(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      onSuggestionSelect(query);
+      setShowSuggestions(false);
+    }
   };
 
   const highlightMatch = (text: string, query: string) => {
@@ -100,7 +114,8 @@ export default function SearchSuggestions({
           placeholder={placeholder}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           value={query}
-          onChange={(e) => onSuggestionSelect(e.target.value)}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           onFocus={() => query.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
         />
         {loading && (

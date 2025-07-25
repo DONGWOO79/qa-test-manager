@@ -35,7 +35,17 @@ export default function SearchBar({
   const handleInputChange = (field: keyof SearchFilters, value: string) => {
     const newFilters = { ...filters, [field]: value };
     setFilters(newFilters);
-    onSearch(newFilters);
+    
+    // 검색어 변경 시에는 즉시 검색하지 않고, 다른 필터 변경 시에만 즉시 검색
+    if (field === 'query') {
+      // 검색어는 Enter 키나 제안 클릭 시에만 검색 실행
+    } else {
+      onSearch(newFilters);
+    }
+  };
+
+  const handleSearch = () => {
+    onSearch(filters);
   };
 
   const handleClearFilter = (filterKey: keyof SearchFilters) => {
@@ -68,10 +78,21 @@ export default function SearchBar({
           <div className="flex-1">
             <SearchSuggestions
               query={filters.query}
-              onSuggestionSelect={(value) => handleInputChange('query', value)}
+              onSuggestionSelect={(value) => {
+                const newFilters = { ...filters, query: value };
+                setFilters(newFilters);
+                onSearch(newFilters);
+              }}
+              onQueryChange={(value) => handleInputChange('query', value)}
               placeholder="테스트 케이스 검색..."
             />
           </div>
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            검색
+          </button>
           <button
             onClick={() => setShowAdvanced(!showAdvanced)}
             className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
@@ -103,11 +124,10 @@ export default function SearchBar({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">모든 상태</option>
-                  <option value="Pass">Pass</option>
-                  <option value="Fail">Fail</option>
-                  <option value="NA">NA</option>
-                  <option value="Holding">Holding</option>
-                  <option value="Not Run">Not Run</option>
+                  <option value="pass">통과</option>
+                  <option value="fail">실패</option>
+                  <option value="na">해당없음</option>
+                  <option value="not_run">미실행</option>
                 </select>
               </div>
 
@@ -120,9 +140,9 @@ export default function SearchBar({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">모든 우선순위</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
+                  <option value="high">높음</option>
+                  <option value="medium">보통</option>
+                  <option value="low">낮음</option>
                 </select>
               </div>
 

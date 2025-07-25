@@ -147,7 +147,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         return 'bg-gray-100 text-gray-800';
       case 'holding':
         return 'bg-yellow-100 text-yellow-800';
-      case 'not run':
+      case 'not_run':
         return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-gray-100 text-gray-800';
@@ -177,7 +177,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         return '해당없음';
       case 'holding':
         return '보류';
-      case 'not run':
+      case 'not_run':
         return '미실행';
       default:
         return status;
@@ -195,7 +195,30 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   return (
     <div className="space-y-6">
       {/* Search Bar */}
-      <SearchBar onSearch={handleSearch} projects={projects} totalResults={pagination.totalCount} appliedFilters={currentFilters} onClearFilter={(key) => { const newFilters = { ...currentFilters, [key]: "" }; setCurrentFilters(newFilters); fetchTestCases(newFilters, 1); }} onClearAllFilters={() => { const clearedFilters = { query: "", status: "", priority: "", project: "", tags: "", dateFrom: "", dateTo: "" }; setCurrentFilters(clearedFilters); fetchTestCases(clearedFilters, 1); }} />
+      <SearchBar 
+        onSearch={handleSearch} 
+        projects={projects} 
+        totalResults={pagination.totalCount} 
+        appliedFilters={currentFilters} 
+        onClearFilter={(key) => { 
+          const newFilters = { ...currentFilters, [key]: "" }; 
+          setCurrentFilters(newFilters); 
+          fetchTestCases(newFilters, 1); 
+        }} 
+        onClearAllFilters={() => { 
+          const clearedFilters = { 
+            query: "", 
+            status: "", 
+            priority: "", 
+            project: "", 
+            tags: "", 
+            dateFrom: "", 
+            dateTo: "" 
+          }; 
+          setCurrentFilters(clearedFilters); 
+          fetchTestCases(clearedFilters, 1); 
+        }} 
+      />
 
       {/* Header */}
       <div className="bg-white rounded-lg shadow">
@@ -267,9 +290,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 >
                   <div className="flex items-center">
                     작성일
-                    {sortBy === 'created_at' && (
-                      <ChevronDownIcon className="h-4 w-4 ml-1" />
-                    )}
+                    <ChevronDownIcon className="h-4 w-4 ml-1" />
                   </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
