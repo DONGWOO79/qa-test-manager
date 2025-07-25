@@ -88,12 +88,6 @@ export default function Dashboard() {
               <h1 className="text-3xl font-bold text-gray-900">QA 테스트 관리 시스템</h1>
               <p className="text-gray-600">프로젝트별 테스트 케이스 관리 및 실행 결과 추적</p>
             </div>
-            <div className="flex space-x-4">
-              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center">
-                <PlusIcon className="h-4 w-4 mr-2" />
-                새 프로젝트
-              </button>
-            </div>
           </div>
         </div>
       </div>
