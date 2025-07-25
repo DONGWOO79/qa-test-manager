@@ -11,13 +11,12 @@ interface TestStep {
 }
 
 interface TestCaseFormProps {
-  projectId?: string;
   testCase?: any;
   onSave: (data: any) => void;
   onCancel: () => void;
 }
 
-export default function TestCaseForm({ testCase, onSave, onCancel, projectId }: TestCaseFormProps) {
+export default function TestCaseForm({ testCase, onSave, onCancel }: TestCaseFormProps) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -114,10 +113,7 @@ export default function TestCaseForm({ testCase, onSave, onCancel, projectId }: 
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...formData,
-          project_id: projectId
-        }),
+        body: JSON.stringify(formData),
       });
 
       const data = await response.json();

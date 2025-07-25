@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get('query') || '';
     const status = searchParams.get('status') || '';
     const priority = searchParams.get('priority') || '';
-    const project = searchParams.get('project') || '';
+    const project = searchParams.get('project') || searchParams.get('projectId') || '';
     const tags = searchParams.get('tags') || '';
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
