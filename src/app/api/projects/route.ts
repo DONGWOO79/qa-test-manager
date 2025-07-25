@@ -6,11 +6,9 @@ export async function GET() {
     const projects = db.prepare(`
       SELECT 
         p.*,
-        tl.username as test_leader_name,
-        te.username as test_engineer_name
+        u.username as created_by_name
       FROM projects p
-      LEFT JOIN users tl ON p.test_leader_id = tl.id
-      LEFT JOIN users te ON p.test_engineer_id = te.id
+      LEFT JOIN users u ON p.created_by = u.id
       ORDER BY p.created_at DESC
     `).all();
 
@@ -27,23 +25,16 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      name,
-      description,
-      test_leader_id,
-      test_engineer_id,
-      server,
-      device,
-      start_date,
-      end_date
-    } = body;
+    const { name, description } = body;
+
+    // 임시로 기본 사용자 ID 사용 (개발용)
+    const userId = 1;
 
     const result = db.prepare(`
       INSERT INTO projects (
-        name, description, test_leader_id, test_engineer_id,
-        server, device, start_date, end_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, description, test_leader_id, test_engineer_id, server, device, start_date, end_date);
+        name, description, created_by
+      ) VALUES (?, ?, ?)
+    `).run(name, description, userId);
 
     return NextResponse.json({ 
       success: true, 

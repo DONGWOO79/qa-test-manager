@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from '@/lib/auth/middleware';
 import * as XLSX from 'xlsx';
 import db from '@/lib/db/database';
 
-export const POST = withAuth(async (request: NextRequest) => {
+export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -36,99 +35,215 @@ export const POST = withAuth(async (request: NextRequest) => {
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
 
-    // 첫 번째 시트 읽기
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-    if (jsonData.length === 0) {
+    if (workbook.SheetNames.length === 0) {
       return NextResponse.json(
-        { success: false, error: '엑셀 파일에 데이터가 없습니다.' },
+        { success: false, error: '엑셀 파일에 시트가 없습니다.' },
         { status: 400 }
       );
     }
 
-    const { user } = request as any;
-    let successCount = 0;
-    let errorCount = 0;
-    const errors: string[] = [];
+    console.log('=== Excel 파일 분석 시작 ===');
+    console.log('시트 목록:', workbook.SheetNames);
 
-    // 트랜잭션으로 데이터 import
-    const transaction = db.transaction(() => {
-      for (const row of jsonData as any[]) {
-        try {
-          // 필수 필드 검증
-          if (!row.title || !row.category) {
-            errors.push(`행 ${successCount + errorCount + 1}: 제목과 카테고리가 필요합니다.`);
-            errorCount++;
+    // 임시로 기본 사용자 ID 사용 (개발용)
+    const userId = 1;
+    let totalSuccessCount = 0;
+    let totalErrorCount = 0;
+    const allErrors: string[] = [];
+
+    // 모든 시트 처리
+    for (const sheetName of workbook.SheetNames) {
+      console.log(`\n=== 시트 "${sheetName}" 처리 시작 ===`);
+      
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // 방법 1: 원시 데이터로 읽기
+      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+      console.log(`시트 범위:`, range);
+      
+      // 헤더를 찾기 위해 여러 방법 시도
+      let headers: string[] = [];
+      let dataStartRow = 0;
+      
+      // 첫 번째 행이 헤더인지 확인
+      const firstRow = [];
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        const cell = worksheet[cellAddress];
+        firstRow.push(cell ? cell.v : '');
+      }
+      
+      console.log('첫 번째 행:', firstRow);
+      
+      // 첫 번째 행에 "TC ID"가 있으면 헤더로 인식
+      if (firstRow.includes('TC ID') || firstRow.includes('No') || firstRow.includes('번호')) {
+        headers = firstRow;
+        dataStartRow = 1;
+        console.log('첫 번째 행을 헤더로 인식');
+      } else {
+        // 두 번째 행을 헤더로 시도
+        const secondRow = [];
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: 1, c: col });
+          const cell = worksheet[cellAddress];
+          secondRow.push(cell ? cell.v : '');
+        }
+        console.log('두 번째 행:', secondRow);
+        
+        if (secondRow.includes('TC ID') || secondRow.includes('No') || secondRow.includes('번호')) {
+          headers = secondRow;
+          dataStartRow = 2;
+          console.log('두 번째 행을 헤더로 인식');
+        } else {
+          // 세 번째 행을 헤더로 시도
+          const thirdRow = [];
+          for (let col = range.s.c; col <= range.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: 2, c: col });
+            const cell = worksheet[cellAddress];
+            thirdRow.push(cell ? cell.v : '');
+          }
+          console.log('세 번째 행:', thirdRow);
+          
+          if (thirdRow.includes('TC ID') || thirdRow.includes('No') || thirdRow.includes('번호')) {
+            headers = thirdRow;
+            dataStartRow = 3;
+            console.log('세 번째 행을 헤더로 인식');
+          } else {
+            allErrors.push(`시트 "${sheetName}": 헤더를 찾을 수 없습니다.`);
             continue;
           }
-
-          // 카테고리 찾기 또는 생성
-          let categoryId = db.prepare(`
-            SELECT id FROM test_categories 
-            WHERE name = ? AND project_id = ?
-          `).get(row.category, projectId);
-
-          if (!categoryId) {
-            const result = db.prepare(`
-              INSERT INTO test_categories (name, project_id)
-              VALUES (?, ?)
-            `).run(row.category, projectId);
-            categoryId = { id: result.lastInsertRowid };
-          }
-
-          // 테스트 케이스 생성
-          const testCaseResult = db.prepare(`
-            INSERT INTO test_cases (
-              title, description, category_id, project_id, priority, 
-              expected_result, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(
-            row.title,
-            row.description || '',
-            categoryId.id,
-            projectId,
-            row.priority || 'medium',
-            row.expected_result || '',
-            user.id
-          );
-
-          const testCaseId = testCaseResult.lastInsertRowid;
-
-          // 테스트 스텝 처리
-          if (row.steps) {
-            const steps = Array.isArray(row.steps) ? row.steps : [row.steps];
-            for (let i = 0; i < steps.length; i++) {
-              const step = steps[i];
-              if (step.action) {
-                db.prepare(`
-                  INSERT INTO test_steps (
-                    test_case_id, step_number, action, expected_result
-                  ) VALUES (?, ?, ?, ?)
-                `).run(testCaseId, i + 1, step.action, step.expected_result || '');
-              }
-            }
-          }
-
-          successCount++;
-        } catch (error) {
-          console.error('Import error for row:', row, error);
-          errors.push(`행 ${successCount + errorCount + 1}: ${error}`);
-          errorCount++;
         }
       }
-    });
+      
+      console.log('최종 헤더:', headers);
+      console.log('데이터 시작 행:', dataStartRow);
 
-    transaction();
+      // 트랜잭션으로 데이터 import
+      const transaction = db.transaction(() => {
+        for (let rowIndex = dataStartRow; rowIndex <= range.e.r; rowIndex++) {
+          try {
+            // 행 데이터 읽기
+            const rowData: any = {};
+            headers.forEach((header, colIndex) => {
+              const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+              const cell = worksheet[cellAddress];
+              rowData[header] = cell ? cell.v : '';
+            });
+
+            // 빈 행 체크 - 모든 필드가 비어있으면 건너뛰기
+            const hasData = Object.values(rowData).some(value => 
+              value !== null && value !== undefined && value !== ''
+            );
+            
+            if (!hasData) {
+              console.log(`행 ${rowIndex + 1}: 빈 행이므로 건너뜀`);
+              continue;
+            }
+
+            console.log(`행 ${rowIndex + 1} 데이터:`, rowData);
+
+            // 필드 매핑
+            const title = rowData['TC ID'] || rowData['No'] || rowData['번호'] || '';
+            const category1 = rowData['분류기준 1'] || '';
+            const category2 = rowData['분류기준 2'] || '';
+            const category3 = rowData['분류기준 3'] || '';
+            const testObjective = rowData['테스트 목표'] || '';
+            const preCondition = rowData['사전 조건 (Pre Condition)'] || '';
+            const testStep = rowData['확인 방법 (Test Step)'] || '';
+            const expectedResult = rowData['기대 결과 (Expected Result)'] || '';
+            const testResult = rowData['결과 (Test Result)'] || '';
+            const tester = rowData['Tester'] || '';
+            const comment = rowData['코멘트'] || '';
+            const btsLink = rowData['BTS 링크'] || '';
+
+            // 필수 필드 검증
+            if (!title) {
+              allErrors.push(`시트 "${sheetName}" 행 ${rowIndex + 1}: TC ID가 필요합니다. (빈 행일 수 있음)`);
+              totalErrorCount++;
+              continue;
+            }
+
+            // 카테고리 생성
+            let categoryName = category1 || '기타';
+            if (category2) categoryName += ` > ${category2}`;
+            if (category3) categoryName += ` > ${category3}`;
+
+            // 카테고리 찾기 또는 생성
+            let categoryId = db.prepare(`
+              SELECT id FROM test_categories 
+              WHERE name = ? AND project_id = ?
+            `).get(categoryName, projectId);
+
+            if (!categoryId) {
+              const result = db.prepare(`
+                INSERT INTO test_categories (name, project_id)
+                VALUES (?, ?)
+              `).run(categoryName, projectId);
+              categoryId = { id: result.lastInsertRowid };
+            }
+
+            // 테스트 케이스 생성
+            const description = `${testObjective}\n\n사전 조건:\n${preCondition}\n\n확인 방법:\n${testStep}\n\n기대 결과:\n${expectedResult}`;
+            
+            const testCaseResult = db.prepare(`
+              INSERT INTO test_cases (
+                title, description, category_id, project_id, priority, 
+                expected_result, status, created_by
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              title,
+              description,
+              categoryId.id,
+              projectId,
+              'medium', // 기본값
+              expectedResult,
+              testResult === 'Pass' ? 'pass' : 
+              testResult === 'Fail' ? 'fail' : 
+              testResult === 'N/A' ? 'na' : 'not_run',
+              userId
+            );
+
+            const testCaseId = testCaseResult.lastInsertRowid;
+
+            // 테스트 스텝 처리
+            if (testStep) {
+              const steps = testStep.split('\n').filter(step => step.trim());
+              for (let j = 0; j < steps.length; j++) {
+                const step = steps[j].trim();
+                if (step) {
+                  db.prepare(`
+                    INSERT INTO test_steps (
+                      test_case_id, step_number, action, expected_result
+                    ) VALUES (?, ?, ?, ?)
+                  `).run(testCaseId, j + 1, step, expectedResult);
+                }
+              }
+            }
+
+            totalSuccessCount++;
+            console.log(`행 ${rowIndex + 1} 성공적으로 처리됨`);
+          } catch (error) {
+            console.error('Import error for row:', rowIndex, error);
+            allErrors.push(`시트 "${sheetName}" 행 ${rowIndex + 1}: ${error}`);
+            totalErrorCount++;
+          }
+        }
+      });
+
+      transaction();
+      console.log(`=== 시트 "${sheetName}" 처리 완료 ===`);
+    }
+
+    console.log('=== Excel 파일 분석 완료 ===');
 
     return NextResponse.json({
       success: true,
-      message: `Import 완료: ${successCount}개 성공, ${errorCount}개 실패`,
+      message: `Import 완료: ${totalSuccessCount}개 성공, ${totalErrorCount}개 실패`,
       data: {
-        successCount,
-        errorCount,
-        errors: errors.slice(0, 10) // 최대 10개 에러만 반환
+        successCount: totalSuccessCount,
+        errorCount: totalErrorCount,
+        errors: allErrors.slice(0, 20), // 최대 20개 에러만 반환
+        processedSheets: workbook.SheetNames
       }
     });
 
@@ -139,4 +254,4 @@ export const POST = withAuth(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+}
