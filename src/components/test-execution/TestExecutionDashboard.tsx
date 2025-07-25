@@ -30,9 +30,8 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
     pass: 0,
     fail: 0,
     na: 0,
-    holding: 0,
-    pass_rate: 0,
-    progress_rate: 0
+    not_run: 0,
+    pass_rate: 0
   });
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +45,7 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
       const response = await fetch(`/api/test-runs?projectId=${projectId}`);
       const data = await response.json();
       if (data.success) {
-        setTestRuns(data.data);
+        setTestRuns(data.data || []);
       }
     } catch (error) {
       console.error('Error fetching test runs:', error);
@@ -58,7 +57,7 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
       const response = await fetch(`/api/statistics?projectId=${projectId}`);
       const data = await response.json();
       if (data.success) {
-        setStatistics(data.data.overall);
+        setStatistics(data.data);
       }
     } catch (error) {
       console.error('Error fetching statistics:', error);
@@ -111,6 +110,11 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
         return '미실행';
     }
   };
+
+  // 진행률 계산
+  const progressRate = statistics.total > 0 
+    ? ((statistics.pass + statistics.fail + statistics.na) / statistics.total) * 100 
+    : 0;
 
   if (loading) {
     return (
@@ -167,7 +171,7 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">진행률</p>
-              <p className="text-2xl font-semibold text-gray-900">{statistics.progress_rate.toFixed(1)}%</p>
+              <p className="text-2xl font-semibold text-gray-900">{progressRate.toFixed(1)}%</p>
             </div>
           </div>
         </div>
@@ -180,12 +184,12 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
           <div>
             <div className="flex justify-between text-sm text-gray-600 mb-1">
               <span>전체 진행률</span>
-              <span>{statistics.progress_rate.toFixed(1)}%</span>
+              <span>{progressRate.toFixed(1)}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${statistics.progress_rate}%` }}
+                style={{ width: `${progressRate}%` }}
               ></div>
             </div>
           </div>
@@ -232,13 +236,13 @@ export default function TestExecutionDashboard({ projectId }: TestExecutionDashb
 
             <div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>보류</span>
-                <span>{statistics.holding > 0 ? ((statistics.holding / statistics.total) * 100).toFixed(1) : 0}%</span>
+                <span>미실행</span>
+                <span>{statistics.not_run > 0 ? ((statistics.not_run / statistics.total) * 100).toFixed(1) : 0}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
                   className="bg-gray-500 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${statistics.holding > 0 ? (statistics.holding / statistics.total) * 100 : 0}%` }}
+                  style={{ width: `${statistics.not_run > 0 ? (statistics.not_run / statistics.total) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
