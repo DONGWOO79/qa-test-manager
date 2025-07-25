@@ -94,40 +94,50 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const projectId = id;
+    const projectId = parseInt(id);
 
-    // Check if project has test cases
-    const testCaseCount = db.prepare(`
-      SELECT COUNT(*) as count FROM test_cases WHERE project_id = ?
-    `).get(projectId);
+    // 트랜잭션 시작 - 프로젝트와 관련 테스트케이스 모두 삭제
+    const transaction = db.transaction(() => {
+      // 1. 해당 프로젝트의 모든 테스트케이스 삭제
+      const deleteTestCases = db.prepare(`
+        DELETE FROM test_cases WHERE project_id = ?
+      `);
+      const testCasesResult = deleteTestCases.run(projectId);
 
-    if (testCaseCount.count > 0) {
+      // 2. 프로젝트 삭제
+      const deleteProject = db.prepare(`
+        DELETE FROM projects WHERE id = ?
+      `);
+      const projectResult = deleteProject.run(projectId);
+
+      return {
+        deletedTestCases: testCasesResult.changes,
+        deletedProject: projectResult.changes
+      };
+    });
+
+    const result = transaction();
+
+    if (result.deletedProject === 0) {
       return NextResponse.json(
-        { success: false, error: 'Cannot delete project with test cases' },
-        { status: 400 }
-      );
-    }
-
-    const result = db.prepare(`
-      DELETE FROM projects WHERE id = ?
-    `).run(projectId);
-
-    if (result.changes === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Project not found' },
+        { success: false, error: "삭제할 프로젝트를 찾을 수 없습니다." },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Project deleted successfully'
+      message: "프로젝트와 관련 데이터가 성공적으로 삭제되었습니다.",
+      data: {
+        deletedTestCases: result.deletedTestCases,
+        deletedProject: result.deletedProject
+      }
     });
 
   } catch (error) {
-    console.error('Error deleting project:', error);
+    console.error("Error deleting project:", error);
     return NextResponse.json(
-      { success: false, error: 'Failed to delete project' },
+      { success: false, error: "프로젝트 삭제 중 오류가 발생했습니다." },
       { status: 500 }
     );
   }
