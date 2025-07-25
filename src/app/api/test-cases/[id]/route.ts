@@ -1,21 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from '@/lib/auth/middleware';
 import db from '@/lib/db/database';
 
-export const GET = withAuth(async (request: NextRequest) => {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const id = request.nextUrl.pathname.split('/').pop();
+    const testCaseId = params.id;
 
+    // 테스트 케이스 정보 가져오기
     const testCase = db.prepare(`
       SELECT 
-        tc.*,
-        cat.name as category_name,
+        tc.id,
+        tc.title,
+        tc.description,
+        tc.priority,
+        tc.status,
+        tc.expected_result,
+        tc.created_at,
+        tc.updated_at,
+        tcat.name as category_name,
+        p.name as project_name,
         u.username as created_by_name
       FROM test_cases tc
-      LEFT JOIN test_categories cat ON tc.category_id = cat.id
+      LEFT JOIN test_categories tcat ON tc.category_id = tcat.id
+      LEFT JOIN projects p ON tc.project_id = p.id
       LEFT JOIN users u ON tc.created_by = u.id
       WHERE tc.id = ?
-    `).get(id);
+    `).get(testCaseId);
 
     if (!testCase) {
       return NextResponse.json(
@@ -24,16 +36,24 @@ export const GET = withAuth(async (request: NextRequest) => {
       );
     }
 
-    // 테스트 스텝들 가져오기
-    const steps = db.prepare(`
-      SELECT * FROM test_steps 
-      WHERE test_case_id = ? 
+    // 테스트 스텝 가져오기
+    const testSteps = db.prepare(`
+      SELECT id, step_number, action, expected_result
+      FROM test_steps
+      WHERE test_case_id = ?
       ORDER BY step_number
-    `).all(id);
+    `).all(testCaseId);
 
-    testCase.steps = steps;
+    const result = {
+      ...testCase,
+      test_steps: testSteps
+    };
 
-    return NextResponse.json({ success: true, data: testCase });
+    return NextResponse.json({
+      success: true,
+      data: result
+    });
+
   } catch (error) {
     console.error('Error fetching test case:', error);
     return NextResponse.json(
@@ -41,67 +61,65 @@ export const GET = withAuth(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+}
 
-export const PUT = withAuth(async (request: NextRequest) => {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const id = request.nextUrl.pathname.split('/').pop();
+    const testCaseId = params.id;
     const body = await request.json();
-    const {
-      title,
-      description,
-      category_id,
-      priority,
-      expected_result,
-      steps
-    } = body;
+    const { title, description, priority, status, expected_result } = body;
 
-    // 테스트 케이스 존재 확인
-    const existingTestCase = db.prepare(`
-      SELECT id FROM test_cases WHERE id = ?
-    `).get(id);
+    if (!title) {
+      return NextResponse.json(
+        { success: false, error: 'Title is required' },
+        { status: 400 }
+      );
+    }
 
-    if (!existingTestCase) {
+    const result = db.prepare(`
+      UPDATE test_cases 
+      SET title = ?, description = ?, priority = ?, status = ?, 
+          expected_result = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(title, description || '', priority || 'medium', 
+           status || 'not_run', expected_result || '', testCaseId);
+
+    if (result.changes === 0) {
       return NextResponse.json(
         { success: false, error: 'Test case not found' },
         { status: 404 }
       );
     }
 
-    // 트랜잭션으로 업데이트
-    const transaction = db.transaction(() => {
-      // 테스트 케이스 업데이트
-      db.prepare(`
-        UPDATE test_cases 
-        SET title = ?, description = ?, category_id = ?, priority = ?, 
-            expected_result = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(title, description, category_id, priority, expected_result, id);
+    // 업데이트된 테스트 케이스 정보 반환
+    const updatedTestCase = db.prepare(`
+      SELECT 
+        tc.id,
+        tc.title,
+        tc.description,
+        tc.priority,
+        tc.status,
+        tc.expected_result,
+        tc.created_at,
+        tc.updated_at,
+        tcat.name as category_name,
+        p.name as project_name,
+        u.username as created_by_name
+      FROM test_cases tc
+      LEFT JOIN test_categories tcat ON tc.category_id = tcat.id
+      LEFT JOIN projects p ON tc.project_id = p.id
+      LEFT JOIN users u ON tc.created_by = u.id
+      WHERE tc.id = ?
+    `).get(testCaseId);
 
-      // 기존 스텝들 삭제
-      db.prepare(`
-        DELETE FROM test_steps WHERE test_case_id = ?
-      `).run(id);
-
-      // 새 스텝들 추가
-      if (steps && Array.isArray(steps)) {
-        for (let i = 0; i < steps.length; i++) {
-          const step = steps[i];
-          db.prepare(`
-            INSERT INTO test_steps (
-              test_case_id, step_number, action, expected_result
-            ) VALUES (?, ?, ?, ?)
-          `).run(id, i + 1, step.action, step.expected_result);
-        }
-      }
+    return NextResponse.json({
+      success: true,
+      data: updatedTestCase
     });
 
-    transaction();
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Test case updated successfully' 
-    });
   } catch (error) {
     console.error('Error updating test case:', error);
     return NextResponse.json(
@@ -109,37 +127,37 @@ export const PUT = withAuth(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+}
 
-export const DELETE = withAuth(async (request: NextRequest) => {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const id = request.nextUrl.pathname.split('/').pop();
+    const testCaseId = params.id;
 
-    // 테스트 케이스 존재 확인
-    const existingTestCase = db.prepare(`
-      SELECT id FROM test_cases WHERE id = ?
-    `).get(id);
+    // 테스트 스텝 먼저 삭제
+    db.prepare(`
+      DELETE FROM test_steps WHERE test_case_id = ?
+    `).run(testCaseId);
 
-    if (!existingTestCase) {
+    // 테스트 케이스 삭제
+    const result = db.prepare(`
+      DELETE FROM test_cases WHERE id = ?
+    `).run(testCaseId);
+
+    if (result.changes === 0) {
       return NextResponse.json(
         { success: false, error: 'Test case not found' },
         { status: 404 }
       );
     }
 
-    // 트랜잭션으로 삭제 (CASCADE로 스텝들도 자동 삭제됨)
-    const transaction = db.transaction(() => {
-      db.prepare(`
-        DELETE FROM test_cases WHERE id = ?
-      `).run(id);
+    return NextResponse.json({
+      success: true,
+      message: 'Test case deleted successfully'
     });
 
-    transaction();
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Test case deleted successfully' 
-    });
   } catch (error) {
     console.error('Error deleting test case:', error);
     return NextResponse.json(
@@ -147,4 +165,4 @@ export const DELETE = withAuth(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+}

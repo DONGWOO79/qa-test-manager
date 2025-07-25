@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PlusIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
+import { PlusIcon, ChevronDownIcon, ChevronUpIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import SearchBar from '@/components/search/SearchBar';
 import { SearchFilters } from '@/lib/search/filterUtils';
 
@@ -24,6 +25,7 @@ interface TestCaseListProps {
 }
 
 export default function TestCaseList({ projectId }: TestCaseListProps) {
+  const router = useRouter();
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [filteredCases, setFilteredCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,11 +48,20 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   });
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  
+  // 탭 관련 상태
+  const [activeTab, setActiveTab] = useState<string>('all');
+  const [availableTabs, setAvailableTabs] = useState<Array<{id: string, name: string, count: number}>>([]);
 
   useEffect(() => {
     fetchProjects();
     fetchTestCases();
   }, [projectId]);
+
+  useEffect(() => {
+    // 탭 정보 업데이트
+    updateTabInfo();
+  }, [testCases]);
 
   const fetchProjects = async () => {
     try {
@@ -76,7 +87,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       
       // Add pagination and sorting
       params.append('page', page.toString());
-      params.append('limit', '20');
+      params.append('limit', '1000'); // 더 많은 데이터를 가져와서 탭별 필터링
       params.append('sortBy', sortBy);
       params.append('sortOrder', sortOrder);
       
@@ -88,10 +99,12 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       const data = await response.json();
 
       if (data.testCases) {
+        setTestCases(data.testCases);
         setFilteredCases(data.testCases);
         setPagination(data.pagination);
       } else if (data.success) {
         // Fallback to old API if search endpoint not available
+        setTestCases(data.data || []);
         setFilteredCases(data.data || []);
         setPagination({
           currentPage: 1,
@@ -108,6 +121,46 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     }
   };
 
+  const updateTabInfo = () => {
+    const tabs = [
+      { id: 'all', name: '전체', count: testCases.length }
+    ];
+
+    // 시트별 탭 생성
+    const sheetGroups = new Map<string, number>();
+    testCases.forEach(testCase => {
+      const sheetName = extractSheetName(testCase.category_name);
+      if (sheetName) {
+        sheetGroups.set(sheetName, (sheetGroups.get(sheetName) || 0) + 1);
+      }
+    });
+
+    sheetGroups.forEach((count, sheetName) => {
+      tabs.push({
+        id: sheetName,
+        name: sheetName,
+        count: count
+      });
+    });
+
+    setAvailableTabs(tabs);
+  };
+
+  const extractSheetName = (categoryName: string): string | null => {
+    const match = categoryName.match(/^\[([^\]]+)\]/);
+    return match ? match[1] : null;
+  };
+
+  const filterByActiveTab = (cases: TestCase[]) => {
+    if (activeTab === 'all') {
+      return cases;
+    }
+    return cases.filter(testCase => {
+      const sheetName = extractSheetName(testCase.category_name);
+      return sheetName === activeTab;
+    });
+  };
+
   const handleSearch = (filters: SearchFilters) => {
     setCurrentFilters(filters);
     fetchTestCases(filters, 1);
@@ -122,6 +175,37 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
 
   const handlePageChange = (page: number) => {
     fetchTestCases(currentFilters, page);
+  };
+
+  const handleViewTestCase = (testCaseId: number) => {
+    router.push(`/test-cases/${testCaseId}`);
+  };
+
+  const handleEditTestCase = (testCaseId: number) => {
+    router.push(`/test-cases/${testCaseId}`);
+  };
+
+  const handleDeleteTestCase = async (testCaseId: number) => {
+    if (!confirm('정말로 이 테스트 케이스를 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/test-cases/${testCaseId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Refresh the list
+        fetchTestCases();
+      } else {
+        alert('테스트 케이스 삭제에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('Error deleting test case:', error);
+      alert('테스트 케이스 삭제에 실패했습니다.');
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -145,8 +229,6 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         return 'bg-red-100 text-red-800';
       case 'na':
         return 'bg-gray-100 text-gray-800';
-      case 'holding':
-        return 'bg-yellow-100 text-yellow-800';
       case 'not_run':
         return 'bg-blue-100 text-blue-800';
       default:
@@ -175,14 +257,15 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         return '실패';
       case 'na':
         return '해당없음';
-      case 'holding':
-        return '보류';
       case 'not_run':
         return '미실행';
       default:
         return status;
     }
   };
+
+  // 현재 탭에 맞는 테스트케이스 필터링
+  const currentTabCases = filterByActiveTab(filteredCases);
 
   if (loading) {
     return (
@@ -198,7 +281,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       <SearchBar 
         onSearch={handleSearch} 
         projects={projects} 
-        totalResults={pagination.totalCount} 
+        totalResults={currentTabCases.length} 
         appliedFilters={currentFilters} 
         onClearFilter={(key) => { 
           const newFilters = { ...currentFilters, [key]: "" }; 
@@ -227,7 +310,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
             <div>
               <h2 className="text-lg font-semibold text-gray-900">테스트 케이스</h2>
               <p className="text-sm text-gray-500">
-                총 {pagination.totalCount}개의 테스트 케이스
+                총 {currentTabCases.length}개의 테스트 케이스
               </p>
             </div>
             <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center">
@@ -235,6 +318,32 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               새 테스트 케이스
             </button>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6">
+            {availableTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.name}
+                <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                  activeTab === tab.id
+                    ? 'bg-blue-100 text-blue-600'
+                    : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </nav>
         </div>
 
         {/* Test Cases Table */}
@@ -299,7 +408,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredCases.map((testCase) => (
+              {currentTabCases.map((testCase) => (
                 <tr key={testCase.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">
@@ -340,22 +449,36 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">
-                      보기
-                    </button>
-                    <button className="text-indigo-600 hover:text-indigo-900 mr-3">
-                      수정
-                    </button>
-                    <button className="text-red-600 hover:text-red-900">
-                      삭제
-                    </button>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleViewTestCase(testCase.id)}
+                        className="text-blue-600 hover:text-blue-900 flex items-center"
+                        title="보기"
+                      >
+                        <EyeIcon className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleEditTestCase(testCase.id)}
+                        className="text-indigo-600 hover:text-indigo-900 flex items-center"
+                        title="수정"
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteTestCase(testCase.id)}
+                        className="text-red-600 hover:text-red-900 flex items-center"
+                        title="삭제"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
 
-          {filteredCases.length === 0 && (
+          {currentTabCases.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500">검색 결과가 없습니다.</p>
             </div>

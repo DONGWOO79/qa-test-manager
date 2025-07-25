@@ -1,17 +1,21 @@
+'use client';
+
 import { useState, useEffect, useRef } from 'react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 interface SearchSuggestionsProps {
   query: string;
-  onSuggestionSelect: (suggestion: string) => void;
   onQueryChange: (query: string) => void;
+  onSuggestionSelect: (suggestion: string) => void;
+  onSearchSubmit: () => void;
   placeholder?: string;
 }
 
 export default function SearchSuggestions({ 
   query, 
-  onSuggestionSelect, 
   onQueryChange,
+  onSuggestionSelect, 
+  onSearchSubmit,
   placeholder = "검색어를 입력하세요..." 
 }: SearchSuggestionsProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -28,14 +32,9 @@ export default function SearchSuggestions({
         return;
       }
 
-      setLoading(true);
       try {
-        const params = new URLSearchParams({
-          query,
-          suggestions: 'true'
-        });
-        
-        const response = await fetch(`/api/test-cases/search?${params}`);
+        setLoading(true);
+        const response = await fetch(`/api/test-cases/search?suggestions=true&query=${encodeURIComponent(query)}`);
         const data = await response.json();
         
         if (data.suggestions) {
@@ -45,6 +44,7 @@ export default function SearchSuggestions({
       } catch (error) {
         console.error('Error fetching suggestions:', error);
         setSuggestions([]);
+        setShowSuggestions(false);
       } finally {
         setLoading(false);
       }
@@ -56,12 +56,7 @@ export default function SearchSuggestions({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        suggestionsRef.current && 
-        !suggestionsRef.current.contains(event.target as Node) &&
-        inputRef.current && 
-        !inputRef.current.contains(event.target as Node)
-      ) {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
       }
     };
@@ -70,38 +65,11 @@ export default function SearchSuggestions({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    onQueryChange(value);
-  };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    onSuggestionSelect(suggestion);
-    setShowSuggestions(false);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      onSuggestionSelect(query);
+      onSearchSubmit();
       setShowSuggestions(false);
     }
-  };
-
-  const highlightMatch = (text: string, query: string) => {
-    if (!query) return text;
-    
-    const regex = new RegExp(`(${query})`, 'gi');
-    const parts = text.split(regex);
-    
-    return parts.map((part, index) => 
-      regex.test(part) ? (
-        <span key={index} className="bg-yellow-200 font-semibold">
-          {part}
-        </span>
-      ) : (
-        part
-      )
-    );
   };
 
   return (
@@ -114,7 +82,7 @@ export default function SearchSuggestions({
           placeholder={placeholder}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           value={query}
-          onChange={handleInputChange}
+          onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => query.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
         />
@@ -125,19 +93,20 @@ export default function SearchSuggestions({
         )}
       </div>
 
-      {showSuggestions && (
+      {showSuggestions && suggestions.length > 0 && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {suggestions.map((suggestion, index) => (
             <button
               key={index}
-              onClick={() => handleSuggestionClick(suggestion)}
               className="w-full px-4 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+              onClick={() => {
+                onSuggestionSelect(suggestion);
+                setShowSuggestions(false);
+              }}
             >
               <div className="flex items-center">
                 <MagnifyingGlassIcon className="h-4 w-4 text-gray-400 mr-2" />
-                <span className="text-sm text-gray-700">
-                  {highlightMatch(suggestion, query)}
-                </span>
+                <span className="text-sm text-gray-700">{suggestion}</span>
               </div>
             </button>
           ))}

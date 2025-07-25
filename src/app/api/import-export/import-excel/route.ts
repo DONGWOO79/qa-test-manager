@@ -43,23 +43,28 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('=== Excel 파일 분석 시작 ===');
+    console.log('파일명:', file.name);
     console.log('시트 목록:', workbook.SheetNames);
+    console.log('시트 개수:', workbook.SheetNames.length);
 
     // 임시로 기본 사용자 ID 사용 (개발용)
     const userId = 1;
     let totalSuccessCount = 0;
     let totalErrorCount = 0;
     const allErrors: string[] = [];
+    const sheetResults: any[] = [];
 
     // 모든 시트 처리
     for (const sheetName of workbook.SheetNames) {
       console.log(`\n=== 시트 "${sheetName}" 처리 시작 ===`);
       
       const worksheet = workbook.Sheets[sheetName];
+      let sheetSuccessCount = 0;
+      let sheetErrorCount = 0;
       
       // 방법 1: 원시 데이터로 읽기
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      console.log(`시트 범위:`, range);
+      console.log(`시트 "${sheetName}" 범위:`, range);
       
       // 헤더를 찾기 위해 여러 방법 시도
       let headers: string[] = [];
@@ -73,13 +78,13 @@ export async function POST(request: NextRequest) {
         firstRow.push(cell ? cell.v : '');
       }
       
-      console.log('첫 번째 행:', firstRow);
+      console.log(`시트 "${sheetName}" 첫 번째 행:`, firstRow);
       
       // 첫 번째 행에 "TC ID"가 있으면 헤더로 인식
       if (firstRow.includes('TC ID') || firstRow.includes('No') || firstRow.includes('번호')) {
         headers = firstRow;
         dataStartRow = 1;
-        console.log('첫 번째 행을 헤더로 인식');
+        console.log(`시트 "${sheetName}": 첫 번째 행을 헤더로 인식`);
       } else {
         // 두 번째 행을 헤더로 시도
         const secondRow = [];
@@ -88,12 +93,12 @@ export async function POST(request: NextRequest) {
           const cell = worksheet[cellAddress];
           secondRow.push(cell ? cell.v : '');
         }
-        console.log('두 번째 행:', secondRow);
+        console.log(`시트 "${sheetName}" 두 번째 행:`, secondRow);
         
         if (secondRow.includes('TC ID') || secondRow.includes('No') || secondRow.includes('번호')) {
           headers = secondRow;
           dataStartRow = 2;
-          console.log('두 번째 행을 헤더로 인식');
+          console.log(`시트 "${sheetName}": 두 번째 행을 헤더로 인식`);
         } else {
           // 세 번째 행을 헤더로 시도
           const thirdRow = [];
@@ -102,12 +107,12 @@ export async function POST(request: NextRequest) {
             const cell = worksheet[cellAddress];
             thirdRow.push(cell ? cell.v : '');
           }
-          console.log('세 번째 행:', thirdRow);
+          console.log(`시트 "${sheetName}" 세 번째 행:`, thirdRow);
           
           if (thirdRow.includes('TC ID') || thirdRow.includes('No') || thirdRow.includes('번호')) {
             headers = thirdRow;
             dataStartRow = 3;
-            console.log('세 번째 행을 헤더로 인식');
+            console.log(`시트 "${sheetName}": 세 번째 행을 헤더로 인식`);
           } else {
             allErrors.push(`시트 "${sheetName}": 헤더를 찾을 수 없습니다.`);
             continue;
@@ -115,8 +120,8 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      console.log('최종 헤더:', headers);
-      console.log('데이터 시작 행:', dataStartRow);
+      console.log(`시트 "${sheetName}" 최종 헤더:`, headers);
+      console.log(`시트 "${sheetName}" 데이터 시작 행:`, dataStartRow);
 
       // 트랜잭션으로 데이터 import
       const transaction = db.transaction(() => {
@@ -136,11 +141,11 @@ export async function POST(request: NextRequest) {
             );
             
             if (!hasData) {
-              console.log(`행 ${rowIndex + 1}: 빈 행이므로 건너뜀`);
+              console.log(`시트 "${sheetName}" 행 ${rowIndex + 1}: 빈 행이므로 건너뜀`);
               continue;
             }
 
-            console.log(`행 ${rowIndex + 1} 데이터:`, rowData);
+            console.log(`시트 "${sheetName}" 행 ${rowIndex + 1} 데이터:`, rowData);
 
             // 필드 매핑
             const title = rowData['TC ID'] || rowData['No'] || rowData['번호'] || '';
@@ -159,14 +164,20 @@ export async function POST(request: NextRequest) {
             // 필수 필드 검증
             if (!title) {
               allErrors.push(`시트 "${sheetName}" 행 ${rowIndex + 1}: TC ID가 필요합니다. (빈 행일 수 있음)`);
+              sheetErrorCount++;
               totalErrorCount++;
               continue;
             }
 
-            // 카테고리 생성
-            let categoryName = category1 || '기타';
+            // 카테고리 생성 - 시트명 포함
+            let categoryName = `[${sheetName}] `;
+            if (category1) categoryName += category1;
+            else categoryName += '기타';
+            
             if (category2) categoryName += ` > ${category2}`;
             if (category3) categoryName += ` > ${category3}`;
+
+            console.log(`시트 "${sheetName}" 행 ${rowIndex + 1}: 카테고리명 = "${categoryName}"`);
 
             // 카테고리 찾기 또는 생성
             let categoryId = db.prepare(`
@@ -180,6 +191,9 @@ export async function POST(request: NextRequest) {
                 VALUES (?, ?)
               `).run(categoryName, projectId);
               categoryId = { id: result.lastInsertRowid };
+              console.log(`시트 "${sheetName}": 새 카테고리 생성 - "${categoryName}" (ID: ${categoryId.id})`);
+            } else {
+              console.log(`시트 "${sheetName}": 기존 카테고리 사용 - "${categoryName}" (ID: ${categoryId.id})`);
             }
 
             // 테스트 케이스 생성
@@ -220,21 +234,31 @@ export async function POST(request: NextRequest) {
               }
             }
 
+            sheetSuccessCount++;
             totalSuccessCount++;
-            console.log(`행 ${rowIndex + 1} 성공적으로 처리됨`);
+            console.log(`시트 "${sheetName}" 행 ${rowIndex + 1} 성공적으로 처리됨`);
           } catch (error) {
-            console.error('Import error for row:', rowIndex, error);
+            console.error(`시트 "${sheetName}" 행 ${rowIndex + 1} Import error:`, error);
             allErrors.push(`시트 "${sheetName}" 행 ${rowIndex + 1}: ${error}`);
+            sheetErrorCount++;
             totalErrorCount++;
           }
         }
       });
 
       transaction();
-      console.log(`=== 시트 "${sheetName}" 처리 완료 ===`);
+      
+      sheetResults.push({
+        sheetName,
+        successCount: sheetSuccessCount,
+        errorCount: sheetErrorCount
+      });
+      
+      console.log(`=== 시트 "${sheetName}" 처리 완료: ${sheetSuccessCount}개 성공, ${sheetErrorCount}개 실패 ===`);
     }
 
     console.log('=== Excel 파일 분석 완료 ===');
+    console.log('전체 결과:', { totalSuccessCount, totalErrorCount, sheetResults });
 
     return NextResponse.json({
       success: true,
@@ -243,7 +267,8 @@ export async function POST(request: NextRequest) {
         successCount: totalSuccessCount,
         errorCount: totalErrorCount,
         errors: allErrors.slice(0, 20), // 최대 20개 에러만 반환
-        processedSheets: workbook.SheetNames
+        processedSheets: workbook.SheetNames,
+        sheetResults: sheetResults
       }
     });
 
