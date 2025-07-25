@@ -65,16 +65,34 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
 
   const exportReport = async (format: 'pdf' | 'excel') => {
     try {
-      const response = await fetch(`/api/reports/export?projectId=${projectId}&format=${format}`);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `qa-report-${projectId}-${new Date().toISOString().split('T')[0]}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      // Excel만 지원하므로 format을 무시하고 statistics로 고정
+      const response = await fetch(`/api/import-export/export-excel?projectId=${projectId}&type=statistics`);
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // 파일명 설정 (확장자 강제)
+        const today = new Date().toISOString().split('T')[0];
+        const filename = `qa-report-${projectId}-${today}.xlsx`;
+        
+        a.download = filename;
+        a.style.display = 'none';
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        // 정리
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 100);
+      } else {
+        const error = await response.json();
+        alert('내보내기 실패: ' + error.error);
+      }
     } catch (error) {
       console.error('Error exporting report:', error);
       alert('리포트 내보내기에 실패했습니다.');

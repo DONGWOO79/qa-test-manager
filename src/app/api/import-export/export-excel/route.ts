@@ -1,90 +1,112 @@
 import { NextRequest, NextResponse } from 'next/server';
-// import { withAuth } from '@/lib/auth/middleware'; // 임시로 주석 처리
 import * as XLSX from 'xlsx';
 import db from '@/lib/db/database';
 
-// export const GET = withAuth(async (request: NextRequest) => {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
     const type = searchParams.get('type') || 'test-cases';
 
-    if (!projectId) {
-      return NextResponse.json(
-        { success: false, error: '프로젝트 ID가 필요합니다.' },
-        { status: 400 }
-      );
-    }
-
     let data: any[] = [];
     let fileName = '';
 
     if (type === 'test-cases') {
-      // 테스트 케이스 데이터 조회
-      data = db.prepare(`
+      // 테스트 케이스 데이터 가져오기
+      const testCases = db.prepare(`
         SELECT 
+          tc.id,
           tc.title,
           tc.description,
           tc.priority,
           tc.status,
           tc.expected_result,
-          tcat.name as category,
-          u.username as created_by,
-          tc.created_at
+          tc.created_at,
+          tcat.name as category_name,
+          p.name as project_name,
+          u.username as created_by_name
         FROM test_cases tc
         LEFT JOIN test_categories tcat ON tc.category_id = tcat.id
+        LEFT JOIN projects p ON tc.project_id = p.id
         LEFT JOIN users u ON tc.created_by = u.id
-        WHERE tc.project_id = ?
+        ${projectId ? 'WHERE tc.project_id = ?' : ''}
         ORDER BY tc.created_at DESC
-      `).all(projectId);
+      `).all(projectId ? [projectId] : []);
 
-      fileName = `test-cases-${projectId}-${new Date().toISOString().split('T')[0]}.xlsx`;
-    } else if (type === 'test-results') {
-      // 테스트 결과 데이터 조회
-      data = db.prepare(`
+      data = testCases.map(tc => ({
+        'TC ID': tc.id,
+        '제목': tc.title,
+        '설명': tc.description,
+        '카테고리': tc.category_name,
+        '프로젝트': tc.project_name,
+        '우선순위': tc.priority,
+        '상태': tc.status,
+        '기대결과': tc.expected_result,
+        '작성자': tc.created_by_name,
+        '작성일': new Date(tc.created_at).toLocaleDateString('ko-KR')
+      }));
+
+      fileName = `qa-test-cases-${projectId || 'all'}-${new Date().toISOString().split('T')[0]}.xlsx`;
+    } else if (type === 'statistics') {
+      // 통계 데이터 가져오기
+      const stats = db.prepare(`
         SELECT 
-          tc.title,
-          tc.priority,
-          tc.status,
-          tr.status as execution_status,
-          tr.executed_by,
-          tr.executed_at,
-          tr.notes
+          p.name as project_name,
+          COUNT(*) as total_cases,
+          SUM(CASE WHEN tc.status = 'pass' THEN 1 ELSE 0 END) as pass_count,
+          SUM(CASE WHEN tc.status = 'fail' THEN 1 ELSE 0 END) as fail_count,
+          SUM(CASE WHEN tc.status = 'na' THEN 1 ELSE 0 END) as na_count,
+          SUM(CASE WHEN tc.status = 'not_run' THEN 1 ELSE 0 END) as not_run_count
         FROM test_cases tc
-        LEFT JOIN test_runs tr ON tc.id = tr.test_case_id
-        WHERE tc.project_id = ?
-        ORDER BY tr.executed_at DESC
-      `).all(projectId);
+        JOIN projects p ON tc.project_id = p.id
+        ${projectId ? 'WHERE tc.project_id = ?' : ''}
+        GROUP BY p.id, p.name
+      `).all(projectId ? [projectId] : []);
 
-      fileName = `test-results-${projectId}-${new Date().toISOString().split('T')[0]}.xlsx`;
+      data = stats.map(stat => ({
+        '프로젝트': stat.project_name,
+        '총 테스트케이스': stat.total_cases,
+        '통과': stat.pass_count,
+        '실패': stat.fail_count,
+        '해당없음': stat.na_count,
+        '미실행': stat.not_run_count,
+        '통과율': stat.total_cases > 0 ? `${((stat.pass_count / stat.total_cases) * 100).toFixed(1)}%` : '0%'
+      }));
+
+      fileName = `qa-report-${projectId || 'all'}-${new Date().toISOString().split('T')[0]}.xlsx`;
     }
 
-    // Excel 파일 생성
+    // Excel 워크북 생성
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet(data);
-    XLSX.utils.book_append_sheet(workbook, worksheet, type === 'test-cases' ? '테스트 케이스' : '테스트 결과');
 
-    // 파일 생성
-    const excelBuffer = XLSX.write(workbook, { 
-      type: 'buffer', 
-      bookType: 'xlsx' 
-    });
+    // 컬럼 너비 자동 조정
+    const columnWidths = Object.keys(data[0] || {}).map(key => ({
+      wch: Math.max(key.length, 15)
+    }));
+    worksheet['!cols'] = columnWidths;
+
+    // 워크시트를 워크북에 추가
+    XLSX.utils.book_append_sheet(workbook, worksheet, type === 'test-cases' ? '테스트케이스' : '통계');
+
+    // Excel 파일 생성
+    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    // 응답 헤더 설정
+    const headers = new Headers();
+    headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    headers.set('Content-Disposition', `attachment; filename="${fileName}"`);
 
     return new NextResponse(excelBuffer, {
       status: 200,
-      headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
-      },
+      headers: headers
     });
 
   } catch (error) {
     console.error('Excel export error:', error);
     return NextResponse.json(
-      { success: false, error: '엑셀 파일 export에 실패했습니다.' },
+      { success: false, error: 'Excel 파일 생성에 실패했습니다.' },
       { status: 500 }
     );
   }
 }
-// });

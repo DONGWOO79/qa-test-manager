@@ -18,7 +18,6 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
-  const [showTemplate, setShowTemplate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,7 +63,7 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
     }
   };
 
-  const handleExport = async (type: 'test-cases' | 'test-results') => {
+  const handleExport = async (type: 'test-cases' | 'statistics') => {
     setExporting(true);
 
     try {
@@ -75,14 +74,39 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
 
       if (response.ok) {
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        
+        // 파일명을 명시적으로 설정 (확장자 강제)
+        const today = new Date().toISOString().split('T')[0];
+        let filename = '';
+        
+        if (type === 'test-cases') {
+          filename = `qa-test-cases-${projectId}-${today}.xlsx`;
+        } else if (type === 'statistics') {
+          filename = `qa-report-${projectId}-${today}.xlsx`;
+        }
+        
+        console.log('Downloading file:', filename); // 디버깅용
+        
+        // Blob에 올바른 MIME 타입 설정
+        const excelBlob = new Blob([blob], { 
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        
+        const url = window.URL.createObjectURL(excelBlob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `qa-${type}-${projectId}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.download = filename; // 명시적으로 파일명 설정
+        a.style.display = 'none';
+        
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        
+        // 정리
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 100);
+        
       } else {
         const error = await response.json();
         alert('내보내기 실패: ' + error.error);
@@ -98,20 +122,32 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
   const downloadTemplate = () => {
     const templateData = [
       {
-        title: '로그인 테스트',
-        description: '사용자 로그인 기능 테스트',
-        category: '인증',
-        priority: 'high',
-        expected_result: '로그인 성공',
-        steps: '1. 사용자명 입력; 2. 비밀번호 입력; 3. 로그인 버튼 클릭'
+        'TC ID': 'TC001',
+        '분류기준 1': '인증',
+        '분류기준 2': '로그인',
+        '분류기준 3': '일반',
+        '테스트 목표': '사용자 로그인 기능 테스트',
+        '사전 조건 (Pre Condition)': '유효한 계정이 존재함',
+        '확인 방법 (Test Step)': '1. 사용자명 입력\n2. 비밀번호 입력\n3. 로그인 버튼 클릭',
+        '기대 결과 (Expected Result)': '로그인 성공',
+        '결과 (Test Result)': 'Pass',
+        'Tester': '테스터1',
+        '코멘트': '정상 동작',
+        'BTS 링크': 'https://example.com/bts/123'
       },
       {
-        title: '회원가입 테스트',
-        description: '새 사용자 회원가입 기능 테스트',
-        category: '인증',
-        priority: 'medium',
-        expected_result: '회원가입 완료',
-        steps: '1. 회원가입 폼 작성; 2. 이메일 인증; 3. 가입 완료'
+        'TC ID': 'TC002',
+        '분류기준 1': '인증',
+        '분류기준 2': '회원가입',
+        '분류기준 3': '일반',
+        '테스트 목표': '새 사용자 회원가입 기능 테스트',
+        '사전 조건 (Pre Condition)': '회원가입 페이지 접근 가능',
+        '확인 방법 (Test Step)': '1. 회원가입 폼 작성\n2. 이메일 인증\n3. 가입 완료',
+        '기대 결과 (Expected Result)': '회원가입 완료',
+        '결과 (Test Result)': 'Pass',
+        'Tester': '테스터2',
+        '코멘트': '정상 동작',
+        'BTS 링크': 'https://example.com/bts/124'
       }
     ];
 
@@ -175,8 +211,8 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
 
           <div className="text-sm text-gray-600">
             <p>• 지원 형식: .xlsx, .xls</p>
-            <p>• 필수 컬럼: title, category</p>
-            <p>• 선택 컬럼: description, priority, expected_result, steps</p>
+            <p>• 필수 컬럼: TC ID, 분류기준 1, 테스트 목표</p>
+            <p>• 선택 컬럼: 분류기준 2, 분류기준 3, 사전 조건, 확인 방법, 기대 결과, 결과, Tester, 코멘트, BTS 링크</p>
           </div>
         </div>
 
@@ -236,18 +272,18 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
             </button>
             
             <button
-              onClick={() => handleExport('test-results')}
+              onClick={() => handleExport('statistics')}
               disabled={exporting}
               className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
             >
               <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-              {exporting ? 'Export 중...' : '테스트 결과 Export'}
+              {exporting ? 'Export 중...' : '통계 리포트 Export'}
             </button>
           </div>
 
           <div className="text-sm text-gray-600">
-            <p>• 테스트 케이스 Export: 모든 테스트 케이스와 스텝 정보</p>
-            <p>• 테스트 결과 Export: 실행 결과와 통계 정보</p>
+            <p>• 테스트 케이스 Export: 모든 테스트 케이스와 상세 정보</p>
+            <p>• 통계 리포트 Export: 프로젝트별 통계 및 결과 요약</p>
             <p>• 파일 형식: .xlsx (Excel)</p>
           </div>
         </div>
