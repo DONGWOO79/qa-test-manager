@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { 
   ArrowLeftIcon,
   PencilIcon,
@@ -35,6 +35,7 @@ interface TestCase {
 export default function TestCaseDetail() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const testCaseId = params.id as string;
   
   const [testCase, setTestCase] = useState<TestCase | null>(null);
@@ -45,8 +46,13 @@ export default function TestCaseDetail() {
   useEffect(() => {
     if (testCaseId) {
       fetchTestCase();
+      // URL 파라미터에서 edit 모드 확인
+      const editMode = searchParams.get('edit');
+      if (editMode === 'true') {
+        setIsEditing(true);
+      }
     }
-  }, [testCaseId]);
+  }, [testCaseId, searchParams]);
 
   const fetchTestCase = async () => {
     try {

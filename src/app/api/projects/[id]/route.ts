@@ -96,7 +96,7 @@ export async function DELETE(
     const { id } = await params;
     const projectId = parseInt(id);
 
-    // 트랜잭션 시작 - 프로젝트와 관련 테스트케이스 모두 삭제
+    // 트랜잭션 시작 - 프로젝트와 관련 데이터 모두 삭제
     const transaction = db.transaction(() => {
       // 1. 해당 프로젝트의 모든 테스트케이스 삭제
       const deleteTestCases = db.prepare(`
@@ -104,7 +104,13 @@ export async function DELETE(
       `);
       const testCasesResult = deleteTestCases.run(projectId);
 
-      // 2. 프로젝트 삭제
+      // 2. 해당 프로젝트의 모든 테스트 카테고리 삭제
+      const deleteTestCategories = db.prepare(`
+        DELETE FROM test_categories WHERE project_id = ?
+      `);
+      const testCategoriesResult = deleteTestCategories.run(projectId);
+
+      // 3. 프로젝트 삭제
       const deleteProject = db.prepare(`
         DELETE FROM projects WHERE id = ?
       `);
@@ -112,6 +118,7 @@ export async function DELETE(
 
       return {
         deletedTestCases: testCasesResult.changes,
+        deletedTestCategories: testCategoriesResult.changes,
         deletedProject: projectResult.changes
       };
     });
@@ -130,6 +137,7 @@ export async function DELETE(
       message: "프로젝트와 관련 데이터가 성공적으로 삭제되었습니다.",
       data: {
         deletedTestCases: result.deletedTestCases,
+        deletedTestCategories: result.deletedTestCategories,
         deletedProject: result.deletedProject
       }
     });

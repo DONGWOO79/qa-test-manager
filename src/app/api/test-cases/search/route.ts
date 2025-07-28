@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     // Get total count for pagination
     const countQuery = sqlQuery.replace(/SELECT.*FROM/, 'SELECT COUNT(*) as total FROM');
-    const countResult = db.prepare(countQuery).get(params);
+    const countResult = db.prepare(countQuery).get(params) as { total: number } | undefined;
     const totalCount = countResult ? countResult.total : 0;
 
     // Add pagination
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(totalCount / limit);
 
     return NextResponse.json({
-      testCases: testCases,
+      data: testCases,
       pagination: {
         currentPage: page,
         totalPages,

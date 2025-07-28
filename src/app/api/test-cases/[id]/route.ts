@@ -3,22 +3,19 @@ import db from '@/lib/db/database';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const testCaseId = params.id;
+    const { id } = await params;
+    const testCaseId = parseInt(id);
 
-    // 테스트 케이스 정보 가져오기
+    if (isNaN(testCaseId)) {
+      return NextResponse.json({ error: 'Invalid test case ID' }, { status: 400 });
+    }
+
     const testCase = db.prepare(`
       SELECT 
-        tc.id,
-        tc.title,
-        tc.description,
-        tc.priority,
-        tc.status,
-        tc.expected_result,
-        tc.created_at,
-        tc.updated_at,
+        tc.*,
         tcat.name as category_name,
         p.name as project_name,
         u.username as created_by_name
@@ -30,139 +27,110 @@ export async function GET(
     `).get(testCaseId);
 
     if (!testCase) {
-      return NextResponse.json(
-        { success: false, error: 'Test case not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Test case not found' }, { status: 404 });
     }
 
-    // 테스트 스텝 가져오기
-    const testSteps = db.prepare(`
-      SELECT id, step_number, action, expected_result
-      FROM test_steps
-      WHERE test_case_id = ?
-      ORDER BY step_number
-    `).all(testCaseId);
-
-    const result = {
-      ...testCase,
-      test_steps: testSteps
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: result
-    });
-
+    return NextResponse.json({ success: true, data: testCase });
   } catch (error) {
     console.error('Error fetching test case:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch test case' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const testCaseId = params.id;
+    const { id } = await params;
+    const testCaseId = parseInt(id);
     const body = await request.json();
-    const { title, description, priority, status, expected_result } = body;
 
-    if (!title) {
-      return NextResponse.json(
-        { success: false, error: 'Title is required' },
-        { status: 400 }
-      );
+    console.log('PUT request - testCaseId:', testCaseId, 'body:', body);
+
+    if (isNaN(testCaseId)) {
+      return NextResponse.json({ error: 'Invalid test case ID' }, { status: 400 });
     }
 
-    const result = db.prepare(`
+    // Check if test case exists
+    const existingTestCase = db.prepare('SELECT id FROM test_cases WHERE id = ?').get(testCaseId);
+    console.log('Existing test case:', existingTestCase);
+    
+    if (!existingTestCase) {
+      return NextResponse.json({ error: 'Test case not found' }, { status: 404 });
+    }
+
+    // Build update query dynamically based on provided fields
+    const updateFields = [];
+    const updateValues = [];
+
+    const allowedFields = ['title', 'description', 'steps', 'expected_results', 'actual_results', 'status', 'priority', 'tags'];
+    
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) {
+        updateFields.push(`${field} = ?`);
+        updateValues.push(body[field]);
+      }
+    }
+
+    console.log('Update fields:', updateFields);
+    console.log('Update values:', updateValues);
+
+    if (updateFields.length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    updateValues.push(testCaseId);
+
+    const updateQuery = `
       UPDATE test_cases 
-      SET title = ?, description = ?, priority = ?, status = ?, 
-          expected_result = ?, updated_at = datetime('now')
+      SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(title, description || '', priority || 'medium', 
-           status || 'not_run', expected_result || '', testCaseId);
+    `;
 
-    if (result.changes === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Test case not found' },
-        { status: 404 }
-      );
+    console.log('Update query:', updateQuery);
+
+    const result = db.prepare(updateQuery).run(...updateValues);
+    console.log('Update result:', result);
+
+    if (result.changes > 0) {
+      return NextResponse.json({ success: true, message: 'Test case updated successfully' });
+    } else {
+      return NextResponse.json({ error: 'Failed to update test case' }, { status: 500 });
     }
-
-    // 업데이트된 테스트 케이스 정보 반환
-    const updatedTestCase = db.prepare(`
-      SELECT 
-        tc.id,
-        tc.title,
-        tc.description,
-        tc.priority,
-        tc.status,
-        tc.expected_result,
-        tc.created_at,
-        tc.updated_at,
-        tcat.name as category_name,
-        p.name as project_name,
-        u.username as created_by_name
-      FROM test_cases tc
-      LEFT JOIN test_categories tcat ON tc.category_id = tcat.id
-      LEFT JOIN projects p ON tc.project_id = p.id
-      LEFT JOIN users u ON tc.created_by = u.id
-      WHERE tc.id = ?
-    `).get(testCaseId);
-
-    return NextResponse.json({
-      success: true,
-      data: updatedTestCase
-    });
-
   } catch (error) {
     console.error('Error updating test case:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update test case' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const testCaseId = params.id;
+    const { id } = await params;
+    const testCaseId = parseInt(id);
 
-    // 테스트 스텝 먼저 삭제
-    db.prepare(`
-      DELETE FROM test_steps WHERE test_case_id = ?
-    `).run(testCaseId);
-
-    // 테스트 케이스 삭제
-    const result = db.prepare(`
-      DELETE FROM test_cases WHERE id = ?
-    `).run(testCaseId);
-
-    if (result.changes === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Test case not found' },
-        { status: 404 }
-      );
+    if (isNaN(testCaseId)) {
+      return NextResponse.json({ error: 'Invalid test case ID' }, { status: 400 });
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Test case deleted successfully'
-    });
+    // Check if test case exists
+    const existingTestCase = db.prepare('SELECT id FROM test_cases WHERE id = ?').get(testCaseId);
+    if (!existingTestCase) {
+      return NextResponse.json({ error: 'Test case not found' }, { status: 404 });
+    }
 
+    const result = db.prepare('DELETE FROM test_cases WHERE id = ?').run(testCaseId);
+
+    if (result.changes > 0) {
+      return NextResponse.json({ success: true, message: 'Test case deleted successfully' });
+    } else {
+      return NextResponse.json({ error: 'Failed to delete test case' }, { status: 500 });
+    }
   } catch (error) {
     console.error('Error deleting test case:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete test case' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -4,13 +4,15 @@ import path from 'path';
 // 데이터베이스 파일 경로 설정
 const dbPath = process.env.NODE_ENV === 'production' 
   ? path.join(process.cwd(), 'qa_test_manager.db')
-  : path.join(process.cwd(), 'qa_test_manager_dev.db');
+  : path.join(process.cwd(), 'database.db');
 
 // 데이터베이스 연결
 const db = new Database(dbPath);
 
 // 데이터베이스 초기화 함수
 export function initializeDatabase() {
+  console.log('Starting database initialization...');
+  
   // 사용자 테이블
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -23,6 +25,7 @@ export function initializeDatabase() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  console.log('Users table created/verified');
 
   // 프로젝트 테이블
   db.exec(`
@@ -37,6 +40,7 @@ export function initializeDatabase() {
       FOREIGN KEY (created_by) REFERENCES users (id)
     )
   `);
+  console.log('Projects table created/verified');
 
   // 테스트 카테고리 테이블
   db.exec(`
@@ -59,8 +63,8 @@ export function initializeDatabase() {
       description TEXT,
       category_id INTEGER NOT NULL,
       project_id INTEGER NOT NULL,
-      priority TEXT CHECK(priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
-      status TEXT CHECK(status IN ('draft', 'active', 'deprecated', 'pass', 'fail', 'na', 'not_run')) DEFAULT 'draft',
+      priority TEXT CHECK(priority IN ('high', 'medium', 'low', 'critical')) DEFAULT 'medium',
+      status TEXT CHECK(status IN ('draft', 'active', 'deprecated', 'pass', 'fail', 'na', 'not_run', 'in_progress', 'passed', 'failed', 'blocked', 'skipped')) DEFAULT 'draft',
       expected_result TEXT,
       created_by INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
