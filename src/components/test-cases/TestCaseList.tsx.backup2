@@ -359,6 +359,9 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                   </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  프로젝트
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   카테고리
                 </th>
                 <th 
@@ -410,6 +413,9 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     <div className="text-sm text-gray-500 truncate max-w-xs">
                       {testCase.description}
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {testCase.project_name || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {testCase.category_name || testCase.test_suite_name || '-'}
