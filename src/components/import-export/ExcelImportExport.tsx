@@ -152,8 +152,30 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
     ];
 
     const workbook = new (window as any).XLSX.utils.book_new();
-    const worksheet = new (window as any).XLSX.utils.json_to_sheet(templateData);
-    new (window as any).XLSX.utils.book_append_sheet(workbook, worksheet, '템플릿');
+    
+    // 첫 번째 시트 (인증)
+    const authWorksheet = new (window as any).XLSX.utils.json_to_sheet(templateData);
+    new (window as any).XLSX.utils.book_append_sheet(workbook, authWorksheet, '인증');
+    
+    // 두 번째 시트 (회원관리)
+    const memberData = [
+      {
+        'TC ID': 'TC003',
+        '분류기준 1': '회원관리',
+        '분류기준 2': '프로필',
+        '분류기준 3': '수정',
+        '테스트 목표': '사용자 프로필 수정 기능 테스트',
+        '사전 조건 (Pre Condition)': '로그인된 상태',
+        '확인 방법 (Test Step)': '1. 프로필 페이지 접근\n2. 정보 수정\n3. 저장 버튼 클릭',
+        '기대 결과 (Expected Result)': '프로필 정보가 수정됨',
+        '결과 (Test Result)': 'Pass',
+        'Tester': '테스터3',
+        '코멘트': '정상 동작',
+        'BTS 링크': 'https://example.com/bts/125'
+      }
+    ];
+    const memberWorksheet = new (window as any).XLSX.utils.json_to_sheet(memberData);
+    new (window as any).XLSX.utils.book_append_sheet(workbook, memberWorksheet, '회원관리');
     
     const excelBuffer = new (window as any).XLSX.write(workbook, { 
       type: 'buffer', 
@@ -211,6 +233,8 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
 
           <div className="text-sm text-gray-600">
             <p>• 지원 형식: .xlsx, .xls</p>
+            <p>• <strong>시트 구분:</strong> 각 시트는 별도의 카테고리로 자동 분류됩니다</p>
+            <p>• <strong>카테고리 형식:</strong> [시트명] 분류기준1 {'>'} 분류기준2 {'>'} 분류기준3</p>
             <p>• 필수 컬럼: TC ID, 분류기준 1, 테스트 목표</p>
             <p>• 선택 컬럼: 분류기준 2, 분류기준 3, 사전 조건, 확인 방법, 기대 결과, 결과, Tester, 코멘트, BTS 링크</p>
           </div>
@@ -240,6 +264,34 @@ export default function ExcelImportExport({ projectId, onImportComplete }: Excel
               <div className="mt-2 text-sm text-gray-600">
                 <p>성공: {importResult.data.successCount}개</p>
                 <p>실패: {importResult.data.errorCount}개</p>
+                
+                {/* 처리된 시트 정보 */}
+                {importResult.data.processedSheets && importResult.data.processedSheets.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-medium">처리된 시트 ({importResult.data.processedSheets.length}개):</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {importResult.data.processedSheets.map((sheet: string, index: number) => (
+                        <li key={index} className="text-xs">📄 {sheet}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* 시트별 결과 */}
+                {importResult.data.sheetResults && importResult.data.sheetResults.length > 0 && (
+                  <div className="mt-2">
+                    <p className="font-medium">시트별 결과:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {importResult.data.sheetResults.map((result: any, index: number) => (
+                        <li key={index} className="text-xs">
+                          📊 {result.sheetName}: {result.successCount}개 성공, {result.errorCount}개 실패
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* 에러 목록 */}
                 {importResult.data.errors && importResult.data.errors.length > 0 && (
                   <div className="mt-2">
                     <p className="font-medium">에러 목록:</p>

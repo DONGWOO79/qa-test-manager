@@ -79,10 +79,41 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     }
   };
 
-  // Get unique categories (sheets)
-  const getCategories = () => {
-    const categories = [...new Set(testCases.map(tc => tc.category))];
-    return categories.filter(cat => cat && cat.trim() !== '');
+  // Get sheet-based tabs from imported categories
+  const getProjectTabs = () => {
+    // 카테고리에서 시트명 추출 (예: "[인증] 로그인 > 일반" -> "인증")
+    const extractSheetName = (category: string) => {
+      const match = category.match(/^\[([^\]]+)\]/);
+      return match ? match[1] : null;
+    };
+
+    // 모든 시트명 수집
+    const sheetNames = new Set<string>();
+    testCases.forEach(tc => {
+      const sheetName = extractSheetName(tc.category);
+      if (sheetName) {
+        sheetNames.add(sheetName);
+      }
+    });
+
+    // 탭 구성
+    const tabs = [
+      { id: 'all', name: '전체', count: testCases.length }
+    ];
+
+    // 시트별 탭 추가
+    Array.from(sheetNames).sort().forEach(sheetName => {
+      const count = testCases.filter(tc => 
+        extractSheetName(tc.category) === sheetName
+      ).length;
+      tabs.push({
+        id: sheetName,
+        name: sheetName,
+        count: count
+      });
+    });
+
+    return tabs;
   };
 
   // Filter test cases by active tab
@@ -90,7 +121,13 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     if (activeTab === 'all') {
       return testCases;
     }
-    return testCases.filter(tc => tc.category === activeTab);
+    
+    // 시트명으로 필터링
+    return testCases.filter(tc => {
+      const match = tc.category.match(/^\[([^\]]+)\]/);
+      const sheetName = match ? match[1] : null;
+      return sheetName === activeTab;
+    });
   };
 
 
@@ -267,7 +304,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     );
   }
 
-  const categories = getCategories();
+  const projectTabs = getProjectTabs();
   const filteredTestCases = getFilteredTestCases();
 
   return (
@@ -322,23 +359,23 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         }}
       />
 
-      {/* Category Filter */}
-      <div className="bg-white p-4 rounded-lg shadow mb-6">
-        <div className="flex items-center space-x-4">
-          <span className="text-sm font-medium text-gray-700">카테고리 필터:</span>
-          <select
-            value={activeTab}
-            onChange={(e) => setActiveTab(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">전체 ({testCases.length})</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category} ({testCases.filter(tc => tc.category === category).length})
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Project Tabs */}
+      <div className="bg-white border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8 px-6">
+          {projectTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {tab.name} ({tab.count})
+            </button>
+          ))}
+        </nav>
       </div>
 
       {/* Test Cases Table */}
