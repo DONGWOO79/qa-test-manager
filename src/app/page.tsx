@@ -15,6 +15,7 @@ import {
   PlusIcon
 } from '@heroicons/react/24/outline';
 import ProjectList from '@/components/projects/ProjectList';
+import Logo from '@/components/common/Logo';
 
 interface OverallStatistics {
   totalProjects: number;
@@ -84,9 +85,12 @@ export default function Dashboard() {
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">QA 테스트 관리 시스템</h1>
-              <p className="text-gray-600">프로젝트별 테스트 케이스 관리 및 실행 결과 추적</p>
+            <div className="flex items-center space-x-4">
+              <Logo size="lg" />
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900">TestHome</h1>
+                <p className="text-gray-600">프로젝트별 테스트 케이스 관리 및 실행 결과 추적</p>
+              </div>
             </div>
           </div>
         </div>

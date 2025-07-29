@@ -12,6 +12,7 @@ import {
   UserIcon,
   CalendarIcon
 } from '@heroicons/react/24/outline';
+import Logo from '@/components/common/Logo';
 
 interface TestCase {
   id: number;
@@ -194,22 +195,25 @@ export default function TestCaseDetail() {
               >
                 <ArrowLeftIcon className="h-5 w-5" />
               </button>
-              <div className="flex items-center">
-                <DocumentTextIcon className="h-8 w-8 text-blue-500 mr-3" />
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editForm.title || ''}
-                        onChange={(e) => setEditForm({...editForm, title: e.target.value})}
-                        className="border border-gray-300 rounded-lg px-3 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    ) : (
-                      testCase.title
-                    )}
-                  </h1>
-                  <p className="text-gray-600">테스트 케이스 상세 정보</p>
+              <div className="flex items-center space-x-4">
+                <Logo size="md" />
+                <div className="flex items-center">
+                  <DocumentTextIcon className="h-8 w-8 text-blue-500 mr-3" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editForm.title || ''}
+                          onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                          className="border border-gray-300 rounded-lg px-3 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      ) : (
+                        testCase.title
+                      )}
+                    </h1>
+                    <p className="text-gray-600">테스트 케이스 상세 정보</p>
+                  </div>
                 </div>
               </div>
             </div>

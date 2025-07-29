@@ -6,7 +6,7 @@ import { AuthProvider } from '@/contexts/AuthContext'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'QA 테스트 관리 시스템',
+  title: 'kakaovx TestHome',
   description: 'QA 테스트 케이스 관리 및 실행 결과 추적 시스템',
 }
 

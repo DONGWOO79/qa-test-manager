@@ -15,6 +15,7 @@ import TestCaseList from '@/components/test-cases/TestCaseList';
 import TestExecutionDashboard from '@/components/test-execution/TestExecutionDashboard';
 import ReportingDashboard from '@/components/reports/ReportingDashboard';
 import ExcelImportExport from '@/components/import-export/ExcelImportExport';
+import Logo from '@/components/common/Logo';
 
 interface Project {
   id: number;
@@ -140,11 +141,14 @@ export default function ProjectDetail() {
               >
                 <ArrowLeftIcon className="h-5 w-5" />
               </button>
-              <div className="flex items-center">
-                <FolderIcon className="h-8 w-8 text-blue-500 mr-3" />
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-                  <p className="text-gray-600">{project.description}</p>
+              <div className="flex items-center space-x-4">
+                <Logo size="md" />
+                <div className="flex items-center">
+                  <FolderIcon className="h-8 w-8 text-blue-500 mr-3" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+                    <p className="text-gray-600">{project.description}</p>
+                  </div>
                 </div>
               </div>
             </div>
