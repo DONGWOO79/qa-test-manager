@@ -9,13 +9,13 @@ export async function GET(request: NextRequest) {
     let query = `
       SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'pass' THEN 1 ELSE 0 END) as pass,
-        SUM(CASE WHEN status = 'fail' THEN 1 ELSE 0 END) as fail,
-        SUM(CASE WHEN status = 'na' THEN 1 ELSE 0 END) as na,
+        SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) as pass,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as fail,
+        SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as na,
         SUM(CASE WHEN status = 'not_run' THEN 1 ELSE 0 END) as not_run,
         CASE 
           WHEN COUNT(*) > 0 THEN 
-            ROUND((SUM(CASE WHEN status = 'pass' THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 1)
+            ROUND((SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 1)
           ELSE 0 
         END as pass_rate
       FROM test_cases
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       params.push(projectId);
     }
 
-    const stats = db.prepare(query).get(...params);
+    const stats = db.prepare(query).get(...params) as any;
 
     const statistics = {
       total: stats.total || 0,

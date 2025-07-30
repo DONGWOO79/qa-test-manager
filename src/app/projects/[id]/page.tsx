@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { 
   ChartBarIcon, 
   DocumentTextIcon, 
@@ -29,17 +29,35 @@ interface Project {
 export default function ProjectDetail() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const projectId = params.id as string;
   
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('test-cases');
+  const [activeTab, setActiveTab] = useState(() => {
+    // URL 쿼리 파라미터에서 탭 정보를 가져오거나, 세션스토리지에서 가져오거나, 기본값 사용
+    const tabFromUrl = searchParams.get('tab');
+    const tabFromSession = typeof window !== 'undefined' ? sessionStorage.getItem(`project-${projectId}-tab`) : null;
+    return tabFromUrl || tabFromSession || 'test-cases';
+  });
 
   useEffect(() => {
     if (projectId) {
       fetchProject();
     }
   }, [projectId]);
+
+  // URL 쿼리 파라미터 변경 감지
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+      // 세션스토리지도 업데이트
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`project-${projectId}-tab`, tabFromUrl);
+      }
+    }
+  }, [searchParams, projectId, activeTab]);
 
   const fetchProject = async () => {
     try {
@@ -58,6 +76,20 @@ export default function ProjectDetail() {
       router.push('/');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    
+    // URL 쿼리 파라미터 업데이트
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tabId);
+    window.history.replaceState({}, '', url.toString());
+    
+    // 세션스토리지에 저장
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`project-${projectId}-tab`, tabId);
     }
   };
 
@@ -176,7 +208,7 @@ export default function ProjectDetail() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'

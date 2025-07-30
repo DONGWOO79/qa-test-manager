@@ -273,12 +273,12 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
 
   const getStatusLabel = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'not_run': return '미실행';
-      case 'in_progress': return '진행중';
-      case 'passed': return '통과';
-      case 'failed': return '실패';
-      case 'blocked': return '차단';
-      case 'skipped': return '건너뜀';
+      case 'not_run': return 'Not Run';
+      case 'in_progress': return 'In Progress';
+      case 'passed': return 'Passed';
+      case 'failed': return 'Failed';
+      case 'blocked': return 'Blocked';
+      case 'skipped': return 'Skipped';
       default: return status;
     }
   };
@@ -531,10 +531,10 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                       className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       autoFocus
                     >
-                      <option value="low">낮음</option>
-                      <option value="medium">보통</option>
-                      <option value="high">높음</option>
-                      <option value="critical">긴급</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
                     </select>
                   ) : (
                     <span
@@ -558,12 +558,12 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                       className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       autoFocus
                     >
-                      <option value="not_run">미실행</option>
-                      <option value="in_progress">진행중</option>
-                      <option value="passed">통과</option>
-                      <option value="failed">실패</option>
-                      <option value="blocked">차단</option>
-                      <option value="skipped">건너뜀</option>
+                      <option value="not_run">Not Run</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="passed">Passed</option>
+                      <option value="failed">Failed</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="skipped">Skipped</option>
                     </select>
                   ) : (
                     <span
