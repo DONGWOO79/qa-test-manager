@@ -263,9 +263,12 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'passed': return 'bg-green-100 text-green-800';
+      case 'pass': return 'bg-green-100 text-green-800';
       case 'failed': return 'bg-red-100 text-red-800';
+      case 'fail': return 'bg-red-100 text-red-800';
       case 'in_progress': return 'bg-blue-100 text-blue-800';
       case 'blocked': return 'bg-yellow-100 text-yellow-800';
+      case 'na': return 'bg-gray-100 text-gray-800';
       case 'skipped': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
@@ -276,8 +279,11 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       case 'not_run': return 'Not Run';
       case 'in_progress': return 'In Progress';
       case 'passed': return 'Passed';
+      case 'pass': return 'Passed';
       case 'failed': return 'Failed';
+      case 'fail': return 'Failed';
       case 'blocked': return 'Blocked';
+      case 'na': return 'N/A';
       case 'skipped': return 'Skipped';
       default: return status;
     }
@@ -563,6 +569,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                       <option value="passed">Passed</option>
                       <option value="failed">Failed</option>
                       <option value="blocked">Blocked</option>
+                      <option value="na">N/A</option>
                       <option value="skipped">Skipped</option>
                     </select>
                   ) : (

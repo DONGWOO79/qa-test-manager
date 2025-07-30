@@ -187,22 +187,22 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="text-center">
             <div className="text-3xl font-bold text-green-600">{statistics.pass}</div>
-            <div className="text-sm text-gray-600">통과</div>
+            <div className="text-sm text-gray-600">Passed</div>
             <div className="text-xs text-gray-500">({statistics.pass_rate.toFixed(1)}%)</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-red-600">{statistics.fail}</div>
-            <div className="text-sm text-gray-600">실패</div>
+            <div className="text-sm text-gray-600">Failed</div>
             <div className="text-xs text-gray-500">({statistics.fail > 0 ? ((statistics.fail / statistics.total) * 100).toFixed(1) : 0}%)</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-yellow-600">{statistics.na}</div>
-            <div className="text-sm text-gray-600">해당없음</div>
+            <div className="text-sm text-gray-600">N/A</div>
             <div className="text-xs text-gray-500">({statistics.na > 0 ? ((statistics.na / statistics.total) * 100).toFixed(1) : 0}%)</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-gray-600">{statistics.not_run}</div>
-            <div className="text-sm text-gray-600">미실행</div>
+            <div className="text-sm text-gray-600">Not Run</div>
             <div className="text-xs text-gray-500">({statistics.not_run > 0 ? ((statistics.not_run / statistics.total) * 100).toFixed(1) : 0}%)</div>
           </div>
         </div>
@@ -244,7 +244,7 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>통과</span>
+                <span>Passed</span>
                 <span>{statistics.pass_rate.toFixed(1)}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -257,7 +257,7 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
 
             <div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>실패</span>
+                <span>Failed</span>
                 <span>{statistics.fail > 0 ? ((statistics.fail / statistics.total) * 100).toFixed(1) : 0}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -270,7 +270,7 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
 
             <div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>해당없음</span>
+                <span>N/A</span>
                 <span>{statistics.na > 0 ? ((statistics.na / statistics.total) * 100).toFixed(1) : 0}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -283,7 +283,7 @@ export default function ReportingDashboard({ projectId }: ReportingDashboardProp
 
             <div>
               <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>미실행</span>
+                <span>Not Run</span>
                 <span>{statistics.not_run > 0 ? ((statistics.not_run / statistics.total) * 100).toFixed(1) : 0}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
