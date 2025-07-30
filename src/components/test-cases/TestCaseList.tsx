@@ -130,8 +130,6 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     });
   };
 
-
-
   // Handle search
   const handleSearch = async (filters: SearchFilters) => {
     try {
@@ -239,25 +237,26 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     }
   };
 
-  // Utility functions
+  // Get status color
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'pass': return 'bg-green-100 text-green-800';
-      case 'fail': return 'bg-red-100 text-red-800';
-      case 'na': return 'bg-gray-100 text-gray-800';
-      case 'holding': return 'bg-yellow-100 text-yellow-800';
-      case 'not_run': return 'bg-blue-100 text-blue-800';
+      case 'passed': return 'bg-green-100 text-green-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      case 'in_progress': return 'bg-blue-100 text-blue-800';
+      case 'blocked': return 'bg-yellow-100 text-yellow-800';
+      case 'skipped': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusLabel = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'pass': return 'Pass';
-      case 'fail': return 'Fail';
-      case 'na': return 'NA';
-      case 'holding': return 'Holding';
-      case 'not_run': return 'Not Run';
+      case 'not_run': return '미실행';
+      case 'in_progress': return '진행중';
+      case 'passed': return '통과';
+      case 'failed': return '실패';
+      case 'blocked': return '차단';
+      case 'skipped': return '건너뜀';
       default: return status;
     }
   };
@@ -267,6 +266,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       case 'high': return 'bg-red-100 text-red-800';
       case 'medium': return 'bg-yellow-100 text-yellow-800';
       case 'low': return 'bg-green-100 text-green-800';
+      case 'critical': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -276,8 +276,37 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       case 'high': return 'High';
       case 'medium': return 'Medium';
       case 'low': return 'Low';
+      case 'critical': return 'Critical';
       default: return priority;
     }
+  };
+
+  // Extract classification 1 from category
+  const getClassification1 = (category: string) => {
+    // 카테고리에서 분류기준 1 추출 (예: "[인증] 로그인 > 일반" -> "로그인")
+    const parts = category.split(']');
+    if (parts.length > 1) {
+      const afterBracket = parts[1].trim();
+      const firstPart = afterBracket.split('>')[0];
+      return firstPart.trim();
+    }
+    return category;
+  };
+
+  // Extract classification 2 and 3 from category
+  const getClassification2And3 = (category: string) => {
+    // 카테고리에서 분류기준 2, 3 추출 (예: "[인증] 로그인 > 일반 > 상세" -> "일반 > 상세")
+    const parts = category.split(']');
+    if (parts.length > 1) {
+      const afterBracket = parts[1].trim();
+      const allParts = afterBracket.split('>');
+      if (allParts.length > 1) {
+        // 분류기준 2와 3만 추출 (첫 번째는 분류기준 1이므로 제외)
+        const classification2And3 = allParts.slice(1).map(part => part.trim()).filter(part => part);
+        return classification2And3.join(' > ');
+      }
+    }
+    return '';
   };
 
   // Load test cases on component mount
@@ -285,8 +314,6 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     fetchProjects();
     fetchTestCases();
   }, [projectId]);
-
-
 
   if (loading) {
     return (
@@ -382,105 +409,111 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {/* Table Header */}
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-medium text-gray-900">테스트케이스 목록</h3>
+          <div className="grid grid-cols-6 gap-4">
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">타이틀</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm font-medium text-gray-500 w-24">카테고리</span>
-              <span className="text-sm font-medium text-gray-500 w-20">우선순위</span>
-              <span className="text-sm font-medium text-gray-500 w-16">상태</span>
-              <span className="text-sm font-medium text-gray-500 w-24">생성일</span>
-              <span className="text-sm font-medium text-gray-500 w-16">작업</span>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">카테고리</span>
+            </div>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">우선순위</span>
+            </div>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">상태</span>
+            </div>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">생성일</span>
+            </div>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">작업</span>
             </div>
           </div>
         </div>
         <ul className="divide-y divide-gray-200">
           {filteredTestCases.map((testCase) => (
             <li key={testCase.id} className="px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {testCase.title}
-                      </p>
-                      <p className="text-sm text-gray-500 truncate">
-                        {testCase.description}
-                      </p>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-6 gap-4">
+                {/* Title */}
+                <div className="col-span-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {getClassification1(testCase.category)}
+                  </p>
                 </div>
                 
-                <div className="flex items-center space-x-4">
-                  {/* Category */}
-                  <span className="text-sm text-gray-500 w-24 truncate">
-                    {testCase.category}
+                {/* Category */}
+                <div className="col-span-1">
+                  <span className="text-sm text-gray-500 truncate">
+                    {getClassification2And3(testCase.category)}
                   </span>
+                </div>
                   
-                  {/* Priority */}
+                {/* Priority */}
+                <div className="col-span-1">
                   {editingField?.id === testCase.id && editingField?.field === 'priority' ? (
-                    <div className="w-20">
-                      <select
-                        value={testCase.priority}
-                        onChange={(e) => handlePriorityChange(testCase.id, e.target.value)}
-                        onBlur={handleEditCancel}
-                        onKeyDown={(e) => handleKeyDown(e, testCase.id, 'priority', testCase.priority)}
-                        className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autoFocus
-                      >
-                        <option value="low">낮음</option>
-                        <option value="medium">보통</option>
-                        <option value="high">높음</option>
-                        <option value="critical">긴급</option>
-                      </select>
-                    </div>
+                    <select
+                      value={testCase.priority}
+                      onChange={(e) => handlePriorityChange(testCase.id, e.target.value)}
+                      onBlur={handleEditCancel}
+                      onKeyDown={(e) => handleKeyDown(e, testCase.id, 'priority', testCase.priority)}
+                      className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      autoFocus
+                    >
+                      <option value="low">낮음</option>
+                      <option value="medium">보통</option>
+                      <option value="high">높음</option>
+                      <option value="critical">긴급</option>
+                    </select>
                   ) : (
                     <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(testCase.priority)} cursor-pointer hover:bg-opacity-80 w-20 justify-center`}
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(testCase.priority)} cursor-pointer hover:bg-opacity-80 justify-center`}
                       onClick={() => handleEditStart(testCase.id, "priority")}
                       title="클릭하여 편집"
                     >
                       {updatingTestCase === testCase.id ? "업데이트 중..." : getPriorityLabel(testCase.priority)}
                     </span>
                   )}
-                  
-                  {/* Status */}
+                </div>
+                
+                {/* Status */}
+                <div className="col-span-1">
                   {editingField?.id === testCase.id && editingField?.field === 'status' ? (
-                    <div className="w-16">
-                      <select
-                        value={testCase.status}
-                        onChange={(e) => handleStatusChange(testCase.id, e.target.value)}
-                        onBlur={handleEditCancel}
-                        onKeyDown={(e) => handleKeyDown(e, testCase.id, 'status', testCase.status)}
-                        className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autoFocus
-                      >
-                        <option value="not_run">미실행</option>
-                        <option value="in_progress">진행중</option>
-                        <option value="passed">통과</option>
-                        <option value="failed">실패</option>
-                        <option value="blocked">차단</option>
-                        <option value="skipped">건너뜀</option>
-                      </select>
-                    </div>
+                    <select
+                      value={testCase.status}
+                      onChange={(e) => handleStatusChange(testCase.id, e.target.value)}
+                      onBlur={handleEditCancel}
+                      onKeyDown={(e) => handleKeyDown(e, testCase.id, 'status', testCase.status)}
+                      className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      autoFocus
+                    >
+                      <option value="not_run">미실행</option>
+                      <option value="in_progress">진행중</option>
+                      <option value="passed">통과</option>
+                      <option value="failed">실패</option>
+                      <option value="blocked">차단</option>
+                      <option value="skipped">건너뜀</option>
+                    </select>
                   ) : (
                     <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(testCase.status)} cursor-pointer hover:bg-opacity-80 w-16 justify-center`}
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(testCase.status)} cursor-pointer hover:bg-opacity-80 justify-center`}
                       onClick={() => handleEditStart(testCase.id, "status")}
                       title="클릭하여 편집"
                     >
                       {updatingTestCase === testCase.id ? "업데이트 중..." : getStatusLabel(testCase.status)}
                     </span>
                   )}
-                  
-                  {/* Created Date */}
-                  <span className="text-sm text-gray-500 w-24">
+                </div>
+                
+                {/* Created Date */}
+                <div className="col-span-1">
+                  <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </span>
-                  
-                  {/* Actions */}
-                  <div className="flex items-center space-x-2 w-16">
+                </div>
+                
+                {/* Actions */}
+                <div className="col-span-1">
+                  <div className="flex items-center space-x-2">
                     <Link
                       href={`/test-cases/${testCase.id}`}
                       className="text-blue-600 hover:text-blue-900"
