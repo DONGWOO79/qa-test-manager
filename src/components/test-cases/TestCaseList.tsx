@@ -439,18 +439,19 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               <span className="text-sm font-medium text-gray-500">카테고리</span>
             </div>
             <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">사전 조건</span>
+            </div>
+            <div className="col-span-1">
+              <span className="text-sm font-medium text-gray-500">확인 방법</span>
+            </div>
+            <div className="col-span-1">
               <span className="text-sm font-medium text-gray-500">우선순위</span>
             </div>
             <div className="col-span-1">
               <span className="text-sm font-medium text-gray-500">상태</span>
             </div>
             <div className="col-span-1">
-            <div className="col-span-1">
-              <span className="text-sm font-medium text-gray-500">사전 조건</span>
-            </div>
-            <div className="col-span-1">
-              <span className="text-sm font-medium text-gray-500">확인 방법</span>
-            </div>              <span className="text-sm font-medium text-gray-500">생성일</span>
+              <span className="text-sm font-medium text-gray-500">생성일</span>
             </div>
             <div className="col-span-1">
               <span className="text-sm font-medium text-gray-500">작업</span>
@@ -474,7 +475,51 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     {getClassification2And3(testCase.category)}
                   </span>
                 </div>
-                  
+                
+                {/* Pre-condition */}
+                <div className="col-span-1">
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => toggleRowExpansion(testCase.id)}
+                      className="p-1 hover:bg-gray-100 rounded"
+                    >
+                      {expandedRows.has(testCase.id) ? (
+                        <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                      )}
+                    </button>
+                    <span className="text-sm text-gray-600 truncate">
+                      {parseDescription(testCase.description).preCondition ? (
+                        parseDescription(testCase.description).preCondition.length > 15 ?
+                          `${parseDescription(testCase.description).preCondition.substring(0, 15)}...` :
+                          parseDescription(testCase.description).preCondition
+                      ) : "사전 조건 없음"}
+                    </span>
+                  </div>
+                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).preCondition && (
+                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
+                      {parseDescription(testCase.description).preCondition}
+                    </div>
+                  )}
+                </div>
+
+                {/* Test Step */}
+                <div className="col-span-1">
+                  <span className="text-sm text-gray-600 truncate">
+                    {parseDescription(testCase.description).testStep ? (
+                      parseDescription(testCase.description).testStep.length > 15 ?
+                        `${parseDescription(testCase.description).testStep.substring(0, 15)}...` :
+                        parseDescription(testCase.description).testStep
+                    ) : "확인 방법 없음"}
+                  </span>
+                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).testStep && (
+                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
+                      {parseDescription(testCase.description).testStep}
+                    </div>
+                  )}
+                </div>
+                
                 {/* Priority */}
                 <div className="col-span-1">
                   {editingField?.id === testCase.id && editingField?.field === 'priority' ? (
@@ -531,49 +576,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                   )}
                 </div>
                 
-                {/* Pre-condition */}
-                <div className="col-span-1">
-                  <div className="flex items-center space-x-1">
-                    <button
-                      onClick={() => toggleRowExpansion(testCase.id)}
-                      className="p-1 hover:bg-gray-100 rounded"
-                    >
-                      {expandedRows.has(testCase.id) ? (
-                        <ChevronDownIcon className="h-4 w-4 text-gray-500" />
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                      )}
-                    </button>
-                    <span className="text-sm text-gray-600 truncate">
-                      {parseDescription(testCase.description).preCondition ? (
-                        parseDescription(testCase.description).preCondition.length > 15 ?
-                          `${parseDescription(testCase.description).preCondition.substring(0, 15)}...` :
-                          parseDescription(testCase.description).preCondition
-                      ) : "사전 조건 없음"}
-                    </span>
-                  </div>
-                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).preCondition && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
-                      {parseDescription(testCase.description).preCondition}
-                    </div>
-                  )}
-                </div>
-
-                {/* Test Step */}
-                <div className="col-span-1">
-                  <span className="text-sm text-gray-600 truncate">
-                    {parseDescription(testCase.description).testStep ? (
-                      parseDescription(testCase.description).testStep.length > 15 ?
-                        `${parseDescription(testCase.description).testStep.substring(0, 15)}...` :
-                        parseDescription(testCase.description).testStep
-                    ) : "확인 방법 없음"}
-                  </span>
-                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).testStep && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
-                      {parseDescription(testCase.description).testStep}
-                    </div>
-                  )}
-                </div>                {/* Created Date */}
+                {/* Created Date */}
                 <div className="col-span-1">
                   <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
