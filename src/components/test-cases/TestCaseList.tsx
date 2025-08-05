@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { EyeIcon, PencilIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import SearchBar from '../search/SearchBar';
@@ -39,6 +39,14 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     dateFrom: '',
     dateTo: ''
   });
+
+  // Column widths (percentage-based for responsive design)
+  const [columnWidths, setColumnWidths] = useState<number[]>([10, 10, 20, 20, 8, 8, 12, 6]);
+  const [isResizing, setIsResizing] = useState<number | null>(null);
+  const [startX, setStartX] = useState<number>(0);
+  const [startWidth, setStartWidth] = useState<number>(0);
+  
+
 
   // Fetch projects
   // Parse description to extract pre-condition and test step
@@ -337,6 +345,68 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     return '';
   };
 
+  // Resize handlers for pre-condition and test step columns only
+  const handleResizeStart = useCallback((e: React.MouseEvent, columnIndex: number) => {
+    // Only allow resizing for pre-condition (index 2) and test step (index 3) columns
+    if (columnIndex !== 2 && columnIndex !== 3) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(columnIndex);
+    setStartX(e.clientX);
+    setStartWidth(columnWidths[columnIndex]);
+  }, [columnWidths]);
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (isResizing !== null && (isResizing === 2 || isResizing === 3)) {
+      const deltaX = e.clientX - startX;
+      
+      // Get table width for percentage calculation
+      const tableElement = document.querySelector('.test-cases-table');
+      const tableWidth = tableElement?.clientWidth || 1000;
+      
+      // Calculate percentage change
+      const percentageChange = (deltaX / tableWidth) * 100;
+      
+      // Define minimum percentages for resizable columns
+      const minPercentages = [10, 10, 12, 12, 8, 8, 12, 6];
+      
+      // Calculate new percentage with constraints
+      const newPercentage = Math.max(minPercentages[isResizing], startWidth + percentageChange);
+      
+      setColumnWidths(prev => {
+        const newWidths = [...prev];
+        newWidths[isResizing] = newPercentage;
+        return newWidths;
+      });
+    }
+  }, [isResizing, startX, startWidth]);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(null);
+  }, []);
+
+  // Add and remove event listeners for resize
+  useEffect(() => {
+    if (isResizing !== null) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      
+      return () => {
+        document.removeEventListener('mousemove', handleResizeMove);
+        document.removeEventListener('mouseup', handleResizeEnd);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+    }
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+
+
+
+
   // Load test cases on component mount
   useEffect(() => {
     fetchProjects();
@@ -363,7 +433,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   const filteredTestCases = getFilteredTestCases();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       {/* Search Bar */}
       <SearchBar 
         onSearch={handleSearch}
@@ -434,32 +504,42 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       </div>
 
       {/* Test Cases Table */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+      <div className="bg-white shadow overflow-hidden sm:rounded-md w-full test-cases-table">
+
+
         {/* Table Header */}
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <div className="grid grid-cols-8 gap-4">
-            <div className="col-span-1">
+          <div className="flex border-r border-gray-300">
+            <div style={{ width: `${columnWidths[0]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">타이틀</span>
             </div>
-            <div className="col-span-1">
+            <div style={{ width: `${columnWidths[1]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">카테고리</span>
             </div>
-            <div className="col-span-1">
+            <div 
+              style={{ width: `${columnWidths[2]}%` }} 
+              className="text-center px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
+              onMouseDown={(e) => handleResizeStart(e, 2)}
+            >
               <span className="text-sm font-medium text-gray-500">사전 조건</span>
             </div>
-            <div className="col-span-1">
+            <div 
+              style={{ width: `${columnWidths[3]}%` }} 
+              className="text-center px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
+              onMouseDown={(e) => handleResizeStart(e, 3)}
+            >
               <span className="text-sm font-medium text-gray-500">확인 방법</span>
             </div>
-            <div className="col-span-1">
+            <div style={{ width: `${columnWidths[4]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">우선순위</span>
             </div>
-            <div className="col-span-1">
+            <div style={{ width: `${columnWidths[5]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">상태</span>
             </div>
-            <div className="col-span-1">
+            <div style={{ width: `${columnWidths[6]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">생성일</span>
             </div>
-            <div className="col-span-1">
+            <div style={{ width: `${columnWidths[7]}%` }} className="text-center px-2">
               <span className="text-sm font-medium text-gray-500">작업</span>
             </div>
           </div>
@@ -467,67 +547,119 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         <ul className="divide-y divide-gray-200">
           {filteredTestCases.map((testCase) => (
             <li key={testCase.id} className="px-6 py-4">
-              <div className="grid grid-cols-8 gap-4">
+              <div className="flex border-r border-gray-300">
                 {/* Title */}
-                <div className="col-span-1">
+                <div style={{ width: `${columnWidths[0]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <p className="text-sm font-medium text-gray-900 truncate">
                     {getClassification1(testCase.category)}
                   </p>
                 </div>
                 
                 {/* Category */}
-                <div className="col-span-1">
+                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-sm text-gray-500 truncate">
                     {getClassification2And3(testCase.category)}
                   </span>
                 </div>
                 
                 {/* Pre-condition */}
-                <div className="col-span-1">
-                  <div className="flex items-center space-x-1">
-                    <button
-                      onClick={() => toggleRowExpansion(testCase.id)}
-                      className="p-1 hover:bg-gray-100 rounded"
-                    >
-                      {expandedRows.has(testCase.id) ? (
-                        <ChevronDownIcon className="h-4 w-4 text-gray-500" />
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                      )}
-                    </button>
-                    <span className="text-sm text-gray-600 truncate">
-                      {parseDescription(testCase.description).preCondition ? (
-                        parseDescription(testCase.description).preCondition.length > 15 ?
-                          `${parseDescription(testCase.description).preCondition.substring(0, 15)}...` :
-                          parseDescription(testCase.description).preCondition
-                      ) : "사전 조건 없음"}
-                    </span>
+                <div 
+                  style={{ width: `${columnWidths[2]}%` }} 
+                  className="flex px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
+                  onMouseDown={(e) => handleResizeStart(e, 2)}
+                >
+                  <button
+                    onClick={() => toggleRowExpansion(testCase.id)}
+                    className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
+                  >
+                    {expandedRows.has(testCase.id) ? (
+                      <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    )}
+                  </button>
+                  <div className="flex-1 ml-2">
+                    {!expandedRows.has(testCase.id) && (
+                      <span 
+                        className="text-sm text-gray-600 leading-relaxed"
+                        style={{ 
+                          lineHeight: columnWidths[2] > 25 ? '1.6' : columnWidths[2] > 20 ? '1.4' : '1.2',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word'
+                        }}
+                      >
+                        {parseDescription(testCase.description).preCondition ? (
+                          parseDescription(testCase.description).preCondition.length > 20 ?
+                            `${parseDescription(testCase.description).preCondition.substring(0, 20)}...` :
+                            parseDescription(testCase.description).preCondition
+                        ) : "사전 조건 없음"}
+                      </span>
+                    )}
+                    {expandedRows.has(testCase.id) && parseDescription(testCase.description).preCondition && (
+                      <div 
+                        className="text-sm text-gray-600 leading-relaxed"
+                        style={{
+                          wordBreak: 'keep-all',
+                          overflowWrap: 'break-word',
+                          whiteSpace: 'pre-line'
+                        }}
+                      >
+                        {parseDescription(testCase.description).preCondition}
+                      </div>
+                    )}
                   </div>
-                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).preCondition && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
-                      {parseDescription(testCase.description).preCondition}
-                    </div>
-                  )}
                 </div>
 
                 {/* Test Step */}
-                <div className="col-span-1">
-                  <span className="text-sm text-gray-600 truncate">
-                    {parseDescription(testCase.description).testStep ? (
-                      parseDescription(testCase.description).testStep.length > 15 ?
-                        `${parseDescription(testCase.description).testStep.substring(0, 15)}...` :
-                        parseDescription(testCase.description).testStep
-                    ) : "확인 방법 없음"}
-                  </span>
-                  {expandedRows.has(testCase.id) && parseDescription(testCase.description).testStep && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-700 whitespace-pre-wrap">
-                      {parseDescription(testCase.description).testStep}
-                    </div>
-                  )}
+                <div 
+                  style={{ width: `${columnWidths[3]}%` }} 
+                  className="flex px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
+                  onMouseDown={(e) => handleResizeStart(e, 3)}
+                >
+                  <button
+                    onClick={() => toggleRowExpansion(testCase.id)}
+                    className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
+                  >
+                    {expandedRows.has(testCase.id) ? (
+                      <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                    )}
+                  </button>
+                  <div className="flex-1 ml-2">
+                    {!expandedRows.has(testCase.id) && (
+                      <span 
+                        className="text-sm text-gray-600 leading-relaxed"
+                        style={{ 
+                          lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word'
+                        }}
+                      >
+                        {parseDescription(testCase.description).testStep ? (
+                          parseDescription(testCase.description).testStep.length > 20 ?
+                            `${parseDescription(testCase.description).testStep.substring(0, 20)}...` :
+                            parseDescription(testCase.description).testStep
+                        ) : "확인 방법 없음"}
+                      </span>
+                    )}
+                    {expandedRows.has(testCase.id) && parseDescription(testCase.description).testStep && (
+                      <div 
+                        className="text-sm text-gray-600 leading-relaxed"
+                        style={{
+                          wordBreak: 'keep-all',
+                          overflowWrap: 'break-word',
+                          whiteSpace: 'pre-line'
+                        }}
+                      >
+                        {parseDescription(testCase.description).testStep}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Priority */}
-                <div className="col-span-1">
+                <div style={{ width: `${columnWidths[4]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {editingField?.id === testCase.id && editingField?.field === 'priority' ? (
                     <select
                       value={testCase.priority}
@@ -554,7 +686,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
                 
                 {/* Status */}
-                <div className="col-span-1">
+                <div style={{ width: `${columnWidths[5]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {editingField?.id === testCase.id && editingField?.field === 'status' ? (
                     <select
                       value={testCase.status}
@@ -584,15 +716,15 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
                 
                 {/* Created Date */}
-                <div className="col-span-1">
+                <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </span>
                 </div>
                 
                 {/* Actions */}
-                <div className="col-span-1">
-                  <div className="flex items-center space-x-2">
+                <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2">
+                  <div className="flex items-center justify-center space-x-2">
                     <Link
                       href={`/test-cases/${testCase.id}`}
                       className="text-blue-600 hover:text-blue-900"
