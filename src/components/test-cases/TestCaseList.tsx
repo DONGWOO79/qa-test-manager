@@ -41,10 +41,16 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   });
 
   // Column widths (percentage-based for responsive design)
-  const [columnWidths, setColumnWidths] = useState<number[]>([10, 10, 20, 20, 8, 8, 12, 6]);
+  const [columnWidths, setColumnWidths] = useState<number[]>([4, 10, 10, 20, 20, 8, 8, 12, 6]);
   const [isResizing, setIsResizing] = useState<number | null>(null);
   const [startX, setStartX] = useState<number>(0);
   const [startWidth, setStartWidth] = useState<number>(0);
+  
+  // Selection and editing states
+  const [selectedTestCases, setSelectedTestCases] = useState<Set<number>>(new Set());
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editingData, setEditingData] = useState<Record<number, Partial<TestCase> & { preCondition?: string; testStep?: string }>>({});
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   
 
 
@@ -347,8 +353,8 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
 
   // Resize handlers for pre-condition and test step columns only
   const handleResizeStart = useCallback((e: React.MouseEvent, columnIndex: number) => {
-    // Only allow resizing for pre-condition (index 2) and test step (index 3) columns
-    if (columnIndex !== 2 && columnIndex !== 3) return;
+    // Only allow resizing for pre-condition (index 3) and test step (index 4) columns
+    if (columnIndex !== 3 && columnIndex !== 4) return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -358,7 +364,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   }, [columnWidths]);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (isResizing !== null && (isResizing === 2 || isResizing === 3)) {
+    if (isResizing !== null && (isResizing === 3 || isResizing === 4)) {
       const deltaX = e.clientX - startX;
       
       // Get table width for percentage calculation
@@ -369,7 +375,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       const percentageChange = (deltaX / tableWidth) * 100;
       
       // Define minimum percentages for resizable columns
-      const minPercentages = [10, 10, 12, 12, 8, 8, 12, 6];
+      const minPercentages = [4, 10, 10, 12, 12, 8, 8, 12, 6];
       
       // Calculate new percentage with constraints
       const newPercentage = Math.max(minPercentages[isResizing], startWidth + percentageChange);
@@ -402,6 +408,105 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       };
     }
   }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+  // Checkbox handlers
+  const handleSelectAll = () => {
+    if (selectedTestCases.size === filteredTestCases.length) {
+      setSelectedTestCases(new Set());
+    } else {
+      setSelectedTestCases(new Set(filteredTestCases.map(tc => tc.id)));
+    }
+  };
+
+  const handleSelectTestCase = (testCaseId: number) => {
+    const newSelected = new Set(selectedTestCases);
+    if (newSelected.has(testCaseId)) {
+      newSelected.delete(testCaseId);
+    } else {
+      newSelected.add(testCaseId);
+    }
+    setSelectedTestCases(newSelected);
+  };
+
+  const handleEditField = (testCaseId: number, field: string, value: string) => {
+    console.log('handleEditField called:', { testCaseId, field, value });
+    setEditingData(prev => {
+      const newData = {
+        ...prev,
+        [testCaseId]: {
+          ...prev[testCaseId],
+          [field]: value
+        }
+      };
+      console.log('New editing data:', newData);
+      return newData;
+    });
+  };
+
+  // Helper function to reconstruct description
+  const reconstructDescription = (originalDescription: string, preCondition?: string, testStep?: string) => {
+    const parts = originalDescription.split(/사전 조건:|확인 방법:|기대 결과:/);
+    const beforePreCondition = parts[0] || '';
+    const afterTestStep = parts[3] || '';
+    
+    let newDescription = beforePreCondition;
+    if (preCondition !== undefined) {
+      newDescription += `사전 조건: ${preCondition}`;
+    } else {
+      newDescription += parts[1] ? `사전 조건: ${parts[1]}` : '';
+    }
+    
+    if (testStep !== undefined) {
+      newDescription += `확인 방법: ${testStep}`;
+    } else {
+      newDescription += parts[2] ? `확인 방법: ${parts[2]}` : '';
+    }
+    
+    newDescription += afterTestStep;
+    return newDescription;
+  };
+
+  const handleSaveAll = async () => {
+    if (Object.keys(editingData).length === 0) return;
+    
+    setIsSaving(true);
+    try {
+      const updatePromises = Object.entries(editingData).map(([testCaseId, data]) => {
+        const testCase = testCases.find(tc => tc.id === parseInt(testCaseId));
+        if (!testCase) return Promise.resolve();
+        
+        // Reconstruct description if preCondition or testStep was edited
+        let finalData = { ...data };
+        if (data.preCondition !== undefined || data.testStep !== undefined) {
+          finalData.description = reconstructDescription(
+            testCase.description,
+            data.preCondition,
+            data.testStep
+          );
+          delete finalData.preCondition;
+          delete finalData.testStep;
+        }
+        
+        return fetch(`/api/test-cases/${testCaseId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(finalData)
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      setEditingData({});
+      setIsEditing(false);
+      setSelectedTestCases(new Set());
+      fetchTestCases(); // Refresh data
+      alert('모든 변경사항이 저장되었습니다.');
+    } catch (error) {
+      console.error('Error saving test cases:', error);
+      alert('저장 중 오류가 발생했습니다.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
 
 
@@ -484,23 +589,55 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         }}
       />
 
-      {/* Project Tabs */}
+      {/* Project Tabs and Action Bar */}
       <div className="bg-white border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8 px-6">
-          {projectTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.name} ({tab.count})
-            </button>
-          ))}
-        </nav>
+        <div className="flex justify-between items-center px-6">
+          <nav className="-mb-px flex space-x-8">
+            {projectTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.name} ({tab.count})
+              </button>
+            ))}
+          </nav>
+          
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-4">
+            {selectedTestCases.size > 0 && (
+              <div className="text-sm text-gray-600">
+                {selectedTestCases.size}개 선택됨
+              </div>
+            )}
+            {selectedTestCases.size > 0 && (
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  isEditing 
+                    ? 'bg-gray-500 text-white hover:bg-gray-600' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isEditing ? '편집 취소' : '편집 모드'}
+              </button>
+            )}
+            {Object.keys(editingData).length > 0 && (
+              <button
+                onClick={handleSaveAll}
+                disabled={isSaving}
+                className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? '저장 중...' : '모두 저장'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Test Cases Table */}
@@ -511,35 +648,53 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
           <div className="flex border-r border-gray-300">
             <div style={{ width: `${columnWidths[0]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">타이틀</span>
+              <input
+                type="checkbox"
+                checked={selectedTestCases.size === filteredTestCases.length && filteredTestCases.length > 0}
+                onChange={handleSelectAll}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+              />
             </div>
             <div style={{ width: `${columnWidths[1]}%` }} className="text-center px-2 border-r border-gray-300">
+              <span className="text-sm font-medium text-gray-500">타이틀</span>
+            </div>
+            <div style={{ width: `${columnWidths[2]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">카테고리</span>
             </div>
             <div 
-              style={{ width: `${columnWidths[2]}%` }} 
-              className="text-center px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
-              onMouseDown={(e) => handleResizeStart(e, 2)}
+              style={{ width: `${columnWidths[3]}%` }} 
+              className="text-center px-2 border-r border-gray-300"
             >
-              <span className="text-sm font-medium text-gray-500">사전 조건</span>
+              <div className="flex items-center justify-center">
+                <span className="text-sm font-medium text-gray-500">사전 조건</span>
+                <div 
+                  className="w-1 h-4 ml-1 cursor-col-resize hover:bg-blue-500 transition-colors"
+                  onMouseDown={(e) => handleResizeStart(e, 3)}
+                />
+              </div>
             </div>
             <div 
-              style={{ width: `${columnWidths[3]}%` }} 
-              className="text-center px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
-              onMouseDown={(e) => handleResizeStart(e, 3)}
+              style={{ width: `${columnWidths[4]}%` }} 
+              className="text-center px-2 border-r border-gray-300"
             >
-              <span className="text-sm font-medium text-gray-500">확인 방법</span>
-            </div>
-            <div style={{ width: `${columnWidths[4]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">우선순위</span>
+              <div className="flex items-center justify-center">
+                <span className="text-sm font-medium text-gray-500">확인 방법</span>
+                <div 
+                  className="w-1 h-4 ml-1 cursor-col-resize hover:bg-blue-500 transition-colors"
+                  onMouseDown={(e) => handleResizeStart(e, 4)}
+                />
+              </div>
             </div>
             <div style={{ width: `${columnWidths[5]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">상태</span>
+              <span className="text-sm font-medium text-gray-500">우선순위</span>
             </div>
             <div style={{ width: `${columnWidths[6]}%` }} className="text-center px-2 border-r border-gray-300">
+              <span className="text-sm font-medium text-gray-500">상태</span>
+            </div>
+            <div style={{ width: `${columnWidths[7]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">생성일</span>
             </div>
-            <div style={{ width: `${columnWidths[7]}%` }} className="text-center px-2">
+            <div style={{ width: `${columnWidths[8]}%` }} className="text-center px-2">
               <span className="text-sm font-medium text-gray-500">작업</span>
             </div>
           </div>
@@ -548,119 +703,192 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
           {filteredTestCases.map((testCase) => (
             <li key={testCase.id} className="px-6 py-4">
               <div className="flex border-r border-gray-300">
-                {/* Title */}
+                {/* Checkbox */}
                 <div style={{ width: `${columnWidths[0]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {getClassification1(testCase.category)}
-                  </p>
+                  <input
+                    type="checkbox"
+                    checked={selectedTestCases.has(testCase.id)}
+                    onChange={() => handleSelectTestCase(testCase.id)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                </div>
+                
+                {/* Title */}
+                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                  {isEditing && selectedTestCases.has(testCase.id) ? (
+                    <input
+                      type="text"
+                      value={editingData[testCase.id]?.title || testCase.title}
+                      onChange={(e) => handleEditField(testCase.id, 'title', e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  ) : (
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {getClassification1(testCase.category)}
+                    </p>
+                  )}
                 </div>
                 
                 {/* Category */}
-                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  <span className="text-sm text-gray-500 truncate">
-                    {getClassification2And3(testCase.category)}
-                  </span>
+                <div style={{ width: `${columnWidths[2]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                  {isEditing && selectedTestCases.has(testCase.id) ? (
+                    <input
+                      type="text"
+                      value={editingData[testCase.id]?.category || testCase.category}
+                      onChange={(e) => handleEditField(testCase.id, 'category', e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  ) : (
+                    <span className="text-sm text-gray-500 truncate">
+                      {getClassification2And3(testCase.category)}
+                    </span>
+                  )}
                 </div>
                 
                 {/* Pre-condition */}
                 <div 
-                  style={{ width: `${columnWidths[2]}%` }} 
-                  className="flex px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
-                  onMouseDown={(e) => handleResizeStart(e, 2)}
+                  style={{ width: `${columnWidths[3]}%` }} 
+                  className="flex px-2 border-r border-gray-300"
                 >
-                  <button
-                    onClick={() => toggleRowExpansion(testCase.id)}
-                    className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
-                  >
-                    {expandedRows.has(testCase.id) ? (
-                      <ChevronDownIcon className="h-4 w-4 text-gray-500" />
-                    ) : (
-                      <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    )}
-                  </button>
-                  <div className="flex-1 ml-2">
-                    {!expandedRows.has(testCase.id) && (
-                      <span 
-                        className="text-sm text-gray-600 leading-relaxed"
-                        style={{ 
-                          lineHeight: columnWidths[2] > 25 ? '1.6' : columnWidths[2] > 20 ? '1.4' : '1.2',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word'
-                        }}
+                  {/* Resize handle for pre-condition */}
+                  <div 
+                    className="w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors"
+                    onMouseDown={(e) => handleResizeStart(e, 3)}
+                  />
+                  
+                  {/* Content area */}
+                  <div className="flex flex-1">
+                    {!isEditing && (
+                      <button
+                        onClick={() => toggleRowExpansion(testCase.id)}
+                        className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
                       >
-                        {parseDescription(testCase.description).preCondition ? (
-                          parseDescription(testCase.description).preCondition.length > 20 ?
-                            `${parseDescription(testCase.description).preCondition.substring(0, 20)}...` :
-                            parseDescription(testCase.description).preCondition
-                        ) : "사전 조건 없음"}
-                      </span>
+                        {expandedRows.has(testCase.id) ? (
+                          <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                        )}
+                      </button>
                     )}
-                    {expandedRows.has(testCase.id) && parseDescription(testCase.description).preCondition && (
-                      <div 
-                        className="text-sm text-gray-600 leading-relaxed"
-                        style={{
-                          wordBreak: 'keep-all',
-                          overflowWrap: 'break-word',
-                          whiteSpace: 'pre-line'
-                        }}
-                      >
-                        {parseDescription(testCase.description).preCondition}
-                      </div>
-                    )}
+                    <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
+                      {isEditing && selectedTestCases.has(testCase.id) ? (
+                        <textarea
+                          defaultValue={parseDescription(testCase.description).preCondition || ''}
+                          onChange={(e) => handleEditField(testCase.id, 'preCondition', e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                          rows={3}
+                          placeholder="사전 조건을 입력하세요..."
+                        />
+                      ) : !expandedRows.has(testCase.id) ? (
+                        <span 
+                          className="text-sm text-gray-600 leading-relaxed"
+                          style={{ 
+                            lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word'
+                          }}
+                        >
+                          {parseDescription(testCase.description).preCondition ? (
+                            parseDescription(testCase.description).preCondition.length > 20 ?
+                              `${parseDescription(testCase.description).preCondition.substring(0, 20)}...` :
+                              parseDescription(testCase.description).preCondition
+                          ) : "사전 조건 없음"}
+                        </span>
+                      ) : parseDescription(testCase.description).preCondition && (
+                        <div 
+                          className="text-sm text-gray-600 leading-relaxed"
+                          style={{
+                            wordBreak: 'keep-all',
+                            overflowWrap: 'break-word',
+                            whiteSpace: 'pre-line'
+                          }}
+                        >
+                          {parseDescription(testCase.description).preCondition}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Test Step */}
                 <div 
-                  style={{ width: `${columnWidths[3]}%` }} 
-                  className="flex px-2 border-r border-gray-300 cursor-col-resize hover:border-blue-500 transition-colors"
-                  onMouseDown={(e) => handleResizeStart(e, 3)}
+                  style={{ width: `${columnWidths[4]}%` }} 
+                  className="flex px-2 border-r border-gray-300"
                 >
-                  <button
-                    onClick={() => toggleRowExpansion(testCase.id)}
-                    className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
-                  >
-                    {expandedRows.has(testCase.id) ? (
-                      <ChevronDownIcon className="h-4 w-4 text-gray-500" />
-                    ) : (
-                      <ChevronRightIcon className="h-4 w-4 text-gray-500" />
-                    )}
-                  </button>
-                  <div className="flex-1 ml-2">
-                    {!expandedRows.has(testCase.id) && (
-                      <span 
-                        className="text-sm text-gray-600 leading-relaxed"
-                        style={{ 
-                          lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word'
-                        }}
+                  {/* Resize handle for test step */}
+                  <div 
+                    className="w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors"
+                    onMouseDown={(e) => handleResizeStart(e, 4)}
+                  />
+                  
+                  {/* Content area */}
+                  <div className="flex flex-1">
+                    {!isEditing && (
+                      <button
+                        onClick={() => toggleRowExpansion(testCase.id)}
+                        className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
                       >
-                        {parseDescription(testCase.description).testStep ? (
-                          parseDescription(testCase.description).testStep.length > 20 ?
-                            `${parseDescription(testCase.description).testStep.substring(0, 20)}...` :
-                            parseDescription(testCase.description).testStep
-                        ) : "확인 방법 없음"}
-                      </span>
+                        {expandedRows.has(testCase.id) ? (
+                          <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                        )}
+                      </button>
                     )}
-                    {expandedRows.has(testCase.id) && parseDescription(testCase.description).testStep && (
-                      <div 
-                        className="text-sm text-gray-600 leading-relaxed"
-                        style={{
-                          wordBreak: 'keep-all',
-                          overflowWrap: 'break-word',
-                          whiteSpace: 'pre-line'
-                        }}
-                      >
-                        {parseDescription(testCase.description).testStep}
-                      </div>
-                    )}
+                    <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
+                      {isEditing && selectedTestCases.has(testCase.id) ? (
+                        <textarea
+                          defaultValue={parseDescription(testCase.description).testStep || ''}
+                          onChange={(e) => handleEditField(testCase.id, 'testStep', e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 resize-none"
+                          rows={3}
+                          placeholder="확인 방법을 입력하세요..."
+                        />
+                      ) : !expandedRows.has(testCase.id) ? (
+                        <span 
+                          className="text-sm text-gray-600 leading-relaxed"
+                          style={{ 
+                            lineHeight: columnWidths[4] > 25 ? '1.6' : columnWidths[4] > 20 ? '1.4' : '1.2',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word'
+                          }}
+                        >
+                          {parseDescription(testCase.description).testStep ? (
+                            parseDescription(testCase.description).testStep.length > 20 ?
+                              `${parseDescription(testCase.description).testStep.substring(0, 20)}...` :
+                              parseDescription(testCase.description).testStep
+                          ) : "확인 방법 없음"}
+                        </span>
+                      ) : parseDescription(testCase.description).testStep && (
+                        <div 
+                          className="text-sm text-gray-600 leading-relaxed"
+                          style={{
+                            wordBreak: 'keep-all',
+                            overflowWrap: 'break-word',
+                            whiteSpace: 'pre-line'
+                          }}
+                        >
+                          {parseDescription(testCase.description).testStep}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 
                 {/* Priority */}
-                <div style={{ width: `${columnWidths[4]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  {editingField?.id === testCase.id && editingField?.field === 'priority' ? (
+                <div style={{ width: `${columnWidths[5]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                  {isEditing && selectedTestCases.has(testCase.id) ? (
+                    <select
+                      value={editingData[testCase.id]?.priority || testCase.priority}
+                      onChange={(e) => handleEditField(testCase.id, 'priority', e.target.value)}
+                      className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  ) : editingField?.id === testCase.id && editingField?.field === 'priority' ? (
                     <select
                       value={testCase.priority}
                       onChange={(e) => handlePriorityChange(testCase.id, e.target.value)}
@@ -686,8 +914,22 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
                 
                 {/* Status */}
-                <div style={{ width: `${columnWidths[5]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  {editingField?.id === testCase.id && editingField?.field === 'status' ? (
+                <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                  {isEditing && selectedTestCases.has(testCase.id) ? (
+                    <select
+                      value={editingData[testCase.id]?.status || testCase.status}
+                      onChange={(e) => handleEditField(testCase.id, 'status', e.target.value)}
+                      className="w-full text-xs border border-gray-300 rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="not_run">Not Run</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="passed">Passed</option>
+                      <option value="failed">Failed</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="na">N/A</option>
+                      <option value="skipped">Skipped</option>
+                    </select>
+                  ) : editingField?.id === testCase.id && editingField?.field === 'status' ? (
                     <select
                       value={testCase.status}
                       onChange={(e) => handleStatusChange(testCase.id, e.target.value)}
@@ -716,14 +958,14 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
                 
                 {/* Created Date */}
-                <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </span>
                 </div>
                 
                 {/* Actions */}
-                <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2">
+                <div style={{ width: `${columnWidths[8]}%` }} className="flex justify-center items-center px-2">
                   <div className="flex items-center justify-center space-x-2">
                     <Link
                       href={`/test-cases/${testCase.id}`}
