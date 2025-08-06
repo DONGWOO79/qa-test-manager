@@ -663,27 +663,21 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
             </div>
             <div 
               style={{ width: `${columnWidths[3]}%` }} 
-              className="text-center px-2 border-r border-gray-300"
+              className={`text-center px-2 border-r border-gray-300 ${
+                !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+              }`}
+              onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
             >
-              <div className="flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-500">사전 조건</span>
-                <div 
-                  className="w-1 h-4 ml-1 cursor-col-resize hover:bg-blue-500 transition-colors"
-                  onMouseDown={(e) => handleResizeStart(e, 3)}
-                />
-              </div>
+              <span className="text-sm font-medium text-gray-500">사전 조건</span>
             </div>
             <div 
               style={{ width: `${columnWidths[4]}%` }} 
-              className="text-center px-2 border-r border-gray-300"
+              className={`text-center px-2 border-r border-gray-300 ${
+                !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+              }`}
+              onMouseDown={!isEditing ? (e) => handleResizeStart(e, 4) : undefined}
             >
-              <div className="flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-500">확인 방법</span>
-                <div 
-                  className="w-1 h-4 ml-1 cursor-col-resize hover:bg-blue-500 transition-colors"
-                  onMouseDown={(e) => handleResizeStart(e, 4)}
-                />
-              </div>
+              <span className="text-sm font-medium text-gray-500">확인 방법</span>
             </div>
             <div style={{ width: `${columnWidths[5]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">우선순위</span>
@@ -748,14 +742,11 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 {/* Pre-condition */}
                 <div 
                   style={{ width: `${columnWidths[3]}%` }} 
-                  className="flex px-2 border-r border-gray-300"
+                  className={`flex px-2 border-r border-gray-300 ${
+                    !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                  }`}
+                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
                 >
-                  {/* Resize handle for pre-condition */}
-                  <div 
-                    className="w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors"
-                    onMouseDown={(e) => handleResizeStart(e, 3)}
-                  />
-                  
                   {/* Content area */}
                   <div className="flex flex-1">
                     {!isEditing && (
@@ -813,14 +804,11 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 {/* Test Step */}
                 <div 
                   style={{ width: `${columnWidths[4]}%` }} 
-                  className="flex px-2 border-r border-gray-300"
+                  className={`flex px-2 border-r border-gray-300 ${
+                    !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                  }`}
+                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 4) : undefined}
                 >
-                  {/* Resize handle for test step */}
-                  <div 
-                    className="w-1 h-full cursor-col-resize hover:bg-blue-500 transition-colors"
-                    onMouseDown={(e) => handleResizeStart(e, 4)}
-                  />
-                  
                   {/* Content area */}
                   <div className="flex flex-1">
                     {!isEditing && (
