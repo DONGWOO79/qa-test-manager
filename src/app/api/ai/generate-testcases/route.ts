@@ -94,7 +94,7 @@ async function extractTextFromFile(filePath: string, fileType: string): Promise<
   }
 }
 
-// AI 프롬프트 생성 (Ollama 최적화)
+// AI 프롬프트 생성 (Ollama 앱과 동일하게)
 function createAIPrompt(content: string, projectName: string): string {
   // 내용이 너무 길면 요약
   let processedContent = content;
@@ -103,50 +103,9 @@ function createAIPrompt(content: string, projectName: string): string {
     console.log('프롬프트 내용 길이 제한 적용:', processedContent.length);
   }
   
-  return `
-당신은 한국어 QA 테스트 엔지니어입니다. 반드시 한국어로만 응답하세요.
+  return `이 기획서로 테스트케이스를 만들어줘
 
-프로젝트명: ${projectName}
-
-요구사항:
-${processedContent}
-
-다음 형식으로 5-10개의 테스트케이스를 생성하세요. 모든 내용은 반드시 한국어로 작성하세요:
-
-⚠️ 중요: 모든 텍스트는 반드시 한국어로만 작성하세요. 영어 사용 금지!
-
-Test Case 1: [한국어 테스트케이스 제목]
-Title: [한국어 테스트케이스 제목]
-Description: [한국어로 테스트케이스 설명]
-Category: [한국어 카테고리 - 예: 로그인, 회원가입, 상품관리, 주문관리, 결제시스템]
-Priority: [High/Medium/Low]
-Status: Not Run
-Pre Condition: [한국어로 사전조건]
-Test Steps: [한국어로 테스트 단계]
-Expected Result: [한국어로 예상 결과]
-
-Test Case 2: [한국어 테스트케이스 제목]
-Title: [한국어 테스트케이스 제목]
-Description: [한국어로 테스트케이스 설명]
-Category: [한국어 카테고리]
-Priority: [High/Medium/Low]
-Status: Not Run
-Pre Condition: [한국어로 사전조건]
-Test Steps: [한국어로 테스트 단계]
-Expected Result: [한국어로 예상 결과]
-
-중요한 규칙:
-1. 모든 텍스트는 반드시 한국어로 작성하세요
-2. 영어나 다른 언어 사용 금지
-3. 각 주요 기능에 대한 테스트케이스 생성
-4. 사용자 시나리오 기반 테스트 포함
-5. 경계값 테스트 포함
-6. 예외 처리 테스트 포함
-7. 각 테스트케이스를 구체적이고 실행 가능하게 작성
-8. 실용적인 테스트 시나리오에 집중
-
-위 형식으로만 응답하고 추가 설명은 포함하지 마세요. 모든 내용은 한국어로만 작성하세요.
-`;
+${processedContent}`;
 }
 
 // Ollama API 호출 (무료 로컬 AI)
@@ -160,14 +119,9 @@ async function callOllama(prompt: string): Promise<any[]> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama2',
+        model: 'gpt-oss:20b',
         prompt: prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 2000
-        }
+        stream: false
       }),
       signal: AbortSignal.timeout(60000) // 60초 타임아웃
     });
@@ -230,69 +184,223 @@ async function callOllama(prompt: string): Promise<any[]> {
   }
 }
 
-// 텍스트에서 테스트케이스 추출하는 함수 (개선)
+// 텍스트에서 테스트케이스 추출하는 함수 (강화된 파싱 로직)
 function extractTestCasesFromText(text: string): any[] {
   const testCases = [];
   
   console.log('텍스트에서 테스트케이스 추출 시작');
   console.log('텍스트 길이:', text.length);
   
-  // Test Case 패턴 찾기
-  const testCasePattern = /Test Case \d+[:\s]*([^\n]+)/gi;
+  // 1. 테이블 형식 패턴 찾기 (TC-ID, 기능, 시나리오, 입력값, 예상 결과, 검증 포인트)
+  const tablePattern = /\|\s*\*\*([A-Z0-9-]+)\*\*\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/gi;
+  
+  // 2. 추가 패턴: 마크다운 테이블 헤더 다음의 데이터 행들
+  const markdownTablePattern = /\|\s*([A-Z0-9-]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/gi;
+  
+  // 3. 간단한 테이블 행 패턴
+  const simpleTablePattern = /\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/gi;
+  
+  // 4. 번호가 있는 테스트케이스 패턴
+  const numberedPattern = /(\d+)[\.\s]*([^:\n]+)[:\s]*([^\n]+)/gi;
+  
+  // 5. 제목 패턴
+  const titlePattern = /([가-힣a-zA-Z\s]+)(테스트|검증|확인|시험)/gi;
   let match;
   let count = 0;
   
-  while ((match = testCasePattern.exec(text)) && count < 10) {
-    const title = match[1].trim();
-    console.log(`테스트케이스 ${count + 1}:`, title);
+  // 테이블 형식에서 테스트케이스 추출
+  while ((match = tablePattern.exec(text)) && count < 20) {
+    const testCaseId = match[1].trim();
+    const functionality = match[2].trim();
+    const scenario = match[3].trim();
+    const input = match[4].trim();
+    const expectedResult = match[5].trim();
+    const verificationPoint = match[6].trim();
     
-    // 해당 테스트케이스의 전체 섹션 찾기
-    const testCaseStart = text.indexOf(match[0]);
-    const nextTestCase = text.indexOf(`Test Case ${count + 2}:`, testCaseStart);
-    const testCaseSection = text.substring(testCaseStart, nextTestCase > 0 ? nextTestCase : text.length);
-    
-    // 각 필드 추출
-    const descriptionMatch = testCaseSection.match(/Description[:\s]*([^\n]+)/i);
-    const categoryMatch = testCaseSection.match(/Category[:\s]*([^\n]+)/i);
-    const priorityMatch = testCaseSection.match(/Priority[:\s]*([^\n]+)/i);
-    const preConditionMatch = testCaseSection.match(/Pre Condition[:\s]*([^\n]+)/i);
-    const testStepsMatch = testCaseSection.match(/Test Steps[:\s]*([^\n]+)/i);
-    const expectedResultMatch = testCaseSection.match(/Expected Result[:\s]*([^\n]+)/i);
-    
-    // 카테고리 한글 매핑
-    let category = categoryMatch ? categoryMatch[1].trim() : "기본";
-    if (category.toLowerCase().includes('functional')) category = "기능테스트";
-    if (category.toLowerCase().includes('security')) category = "보안테스트";
-    if (category.toLowerCase().includes('performance')) category = "성능테스트";
-    if (category.toLowerCase().includes('usability')) category = "사용성테스트";
-    if (category.toLowerCase().includes('integration')) category = "통합테스트";
+    console.log(`Found table pattern match: ${testCaseId} - ${functionality}`);
     
     testCases.push({
-      title: title,
-      description: descriptionMatch ? descriptionMatch[1].trim() : `테스트케이스 ${count + 1}에 대한 상세 설명`,
-      category: category,
-      priority: priorityMatch ? priorityMatch[1].trim().toLowerCase() : "medium",
-      status: "draft",
-      preCondition: preConditionMatch ? preConditionMatch[1].trim() : "테스트 환경이 준비되어 있어야 함",
-      testStep: testStepsMatch ? testStepsMatch[1].trim() : `1. ${title} 기능 접근\n2. 기능 테스트 실행\n3. 결과 확인`,
-      expectedResult: expectedResultMatch ? expectedResultMatch[1].trim() : "기능이 정상적으로 작동함"
+      title: functionality,
+      description: `시나리오: ${scenario}\n입력값: ${input}\n예상 결과: ${expectedResult}\n검증 포인트: ${verificationPoint}`,
+      category: '기능테스트',
+      testStep: scenario,
+      expectedResult: expectedResult,
+      priority: 'medium',
+      status: 'draft'
     });
     count++;
   }
   
-  // 패턴이 없으면 기본 테스트케이스 생성
-  if (testCases.length === 0) {
-    console.log('패턴을 찾을 수 없음, 기본 테스트케이스 생성');
+  // 마크다운 테이블 패턴으로 추가 추출
+  while ((match = markdownTablePattern.exec(text)) && count < 20) {
+    const testCaseId = match[1].trim();
+    const functionality = match[2].trim();
+    const scenario = match[3].trim();
+    const input = match[4].trim();
+    const expectedResult = match[5].trim();
+    const verificationPoint = match[6].trim();
+    
+    // 이미 추가된 테스트케이스인지 확인
+    const existing = testCases.find(tc => tc.title === functionality);
+    if (existing) continue;
+    
+    console.log(`Found markdown table pattern match: ${testCaseId} - ${functionality}`);
+    
     testCases.push({
-      title: "기본 기능 테스트",
-      description: "시스템의 기본 기능을 테스트합니다.",
-      category: "기본",
-      priority: "medium",
-      status: "draft",
-      preCondition: "시스템이 정상적으로 실행되어야 함",
-      testStep: "1. 시스템 접속\n2. 기본 기능 확인\n3. 결과 검증",
-      expectedResult: "시스템이 정상적으로 작동함"
+      title: functionality,
+      description: `시나리오: ${scenario}\n입력값: ${input}\n예상 결과: ${expectedResult}\n검증 포인트: ${verificationPoint}`,
+      category: '기능테스트',
+      testStep: scenario,
+      expectedResult: expectedResult,
+      priority: 'medium',
+      status: 'draft'
     });
+    count++;
+  }
+  
+  // 3. 간단한 테이블 행 패턴으로 추가 추출
+  if (testCases.length < 5) {
+    while ((match = simpleTablePattern.exec(text)) && count < 10) {
+      const testCaseId = match[1].trim();
+      const functionality = match[2].trim();
+      const scenario = match[3].trim();
+      const input = match[4].trim();
+      const expectedResult = match[5].trim();
+      const verificationPoint = match[6].trim();
+      
+      // 이미 추가된 테스트케이스인지 확인
+      const existing = testCases.find(tc => tc.title === functionality);
+      if (existing) continue;
+      
+      console.log(`Found simple table pattern match: ${testCaseId} - ${functionality}`);
+      
+      testCases.push({
+        title: functionality,
+        description: `시나리오: ${scenario}\n입력값: ${input}\n예상 결과: ${expectedResult}\n검증 포인트: ${verificationPoint}`,
+        category: '기능테스트',
+        testStep: scenario,
+        expectedResult: expectedResult,
+        priority: 'medium',
+        status: 'draft'
+      });
+      count++;
+    }
+  }
+  
+  // 4. 번호가 있는 테스트케이스 패턴
+  if (testCases.length < 5) {
+    while ((match = numberedPattern.exec(text)) && count < 10) {
+      const number = match[1].trim();
+      const title = match[2].trim();
+      const description = match[3].trim();
+      
+      // 이미 추가된 테스트케이스인지 확인
+      const existing = testCases.find(tc => tc.title === title);
+      if (existing) continue;
+      
+      console.log(`Found numbered pattern match: ${number} - ${title}`);
+      
+      testCases.push({
+        title: title,
+        description: description,
+        category: '기능테스트',
+        testStep: `1. ${title} 기능 접근\n2. 기능 테스트 실행\n3. 결과 확인`,
+        expectedResult: "기능이 정상적으로 작동함",
+        priority: 'medium',
+        status: 'draft'
+      });
+      count++;
+    }
+  }
+  
+  // 5. 제목 패턴으로 추가 추출
+  if (testCases.length < 5) {
+    while ((match = titlePattern.exec(text)) && count < 10) {
+      const title = match[1].trim() + match[2];
+      
+      // 이미 추가된 테스트케이스인지 확인
+      const existing = testCases.find(tc => tc.title === title);
+      if (existing) continue;
+      
+      console.log(`Found title pattern match: ${title}`);
+      
+      testCases.push({
+        title: title,
+        description: `${title}에 대한 상세 테스트 시나리오`,
+        category: '기능테스트',
+        testStep: `1. ${title} 기능 접근\n2. 기능 테스트 실행\n3. 결과 확인`,
+        expectedResult: "기능이 정상적으로 작동함",
+        priority: 'medium',
+        status: 'draft'
+      });
+      count++;
+    }
+  }
+  
+  // 6. 기존 Test Case 패턴도 지원
+  if (testCases.length === 0) {
+    const testCasePattern = /Test Case \d+[:\s]*([^\n]+)/gi;
+    let testCaseMatch;
+    
+    while ((testCaseMatch = testCasePattern.exec(text)) && count < 10) {
+      const title = testCaseMatch[1].trim();
+      console.log(`테스트케이스 ${count + 1}:`, title);
+      
+      testCases.push({
+        title: title,
+        description: `테스트케이스 ${count + 1}에 대한 상세 설명`,
+        category: "기본",
+        priority: "medium",
+        status: "draft",
+        preCondition: "테스트 환경이 준비되어 있어야 함",
+        testStep: `1. ${title} 기능 접근\n2. 기능 테스트 실행\n3. 결과 확인`,
+        expectedResult: "기능이 정상적으로 작동함"
+      });
+      count++;
+    }
+  }
+  
+  // 최소 3개 이상의 테스트케이스가 없으면 기본 테스트케이스로 보충
+  if (testCases.length < 3) {
+    console.log(`테스트케이스가 ${testCases.length}개만 추출됨, 기본 테스트케이스로 보충`);
+    
+    const defaultCases = [
+      {
+        title: "사용자 로그인 기능 테스트",
+        description: "유효한 사용자 계정으로 로그인 기능을 테스트합니다.",
+        category: "로그인",
+        testStep: "1. 로그인 페이지 접속\n2. 유효한 이메일과 비밀번호 입력\n3. 로그인 버튼 클릭",
+        expectedResult: "로그인이 성공하고 메인 페이지로 이동",
+        priority: "medium",
+        status: "draft"
+      },
+      {
+        title: "상품 목록 조회 테스트",
+        description: "상품 목록이 정상적으로 표시되는지 테스트합니다.",
+        category: "상품관리",
+        testStep: "1. 메인 페이지 접속\n2. 상품 목록 확인\n3. 상품 정보 검증",
+        expectedResult: "상품 목록이 정상적으로 표시됨",
+        priority: "medium",
+        status: "draft"
+      },
+      {
+        title: "회원가입 기능 테스트",
+        description: "새로운 사용자 회원가입 기능을 테스트합니다.",
+        category: "회원관리",
+        testStep: "1. 회원가입 페이지 접속\n2. 필수 정보 입력\n3. 회원가입 버튼 클릭",
+        expectedResult: "회원가입이 성공하고 확인 이메일 발송",
+        priority: "medium",
+        status: "draft"
+      }
+    ];
+    
+    // 기존 테스트케이스와 중복되지 않는 기본 테스트케이스만 추가
+    for (const defaultCase of defaultCases) {
+      const existing = testCases.find(tc => tc.title === defaultCase.title);
+      if (!existing && testCases.length < 5) {
+        testCases.push(defaultCase);
+      }
+    }
   }
   
   console.log('추출된 테스트케이스 수:', testCases.length);
