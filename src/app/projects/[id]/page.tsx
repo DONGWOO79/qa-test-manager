@@ -9,13 +9,15 @@ import {
   ArrowUpTrayIcon,
   ArrowLeftIcon,
   TrashIcon,
-  FolderIcon
+  FolderIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import TestCaseList from '@/components/test-cases/TestCaseList';
 import TestExecutionDashboard from '@/components/test-execution/TestExecutionDashboard';
 import ReportingDashboard from '@/components/reports/ReportingDashboard';
 import ExcelImportExport from '@/components/import-export/ExcelImportExport';
 import Logo from '@/components/common/Logo';
+import AIGenerationModal from '@/components/ai/AIGenerationModal';
 
 interface Project {
   id: number;
@@ -40,6 +42,7 @@ export default function ProjectDetail() {
     const tabFromSession = typeof window !== 'undefined' ? sessionStorage.getItem(`project-${projectId}-tab`) : null;
     return tabFromUrl || tabFromSession || 'test-cases';
   });
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -91,6 +94,13 @@ export default function ProjectDetail() {
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(`project-${projectId}-tab`, tabId);
     }
+  };
+
+  const handleAIGenerationComplete = () => {
+    // 테스트케이스 탭으로 이동하고 페이지 새로고침
+    handleTabChange('test-cases');
+    // TestCaseList 컴포넌트가 자동으로 새로고침되도록 key 변경
+    window.location.reload();
   };
 
   const getStatusColor = (status: string) => {
@@ -188,6 +198,13 @@ export default function ProjectDetail() {
               <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(project.status)}`}>
                 {getStatusLabel(project.status)}
               </span>
+              <button
+                onClick={() => setIsAIModalOpen(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <SparklesIcon className="h-4 w-4" />
+                <span>AI 생성</span>
+              </button>
               <button onClick={() => { if (confirm("이 프로젝트를 삭제하시겠습니까?")) { fetch(`/api/projects/${projectId}`, { method: "DELETE" }).then(res => res.json()).then(data => { if (data.success) { alert("프로젝트가 삭제되었습니다."); router.push("/"); } else { alert("삭제 실패: " + data.error); } }).catch(err => { console.error(err); alert("삭제 중 오류가 발생했습니다."); }); } }} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">
                 프로젝트 삭제
               </button>
@@ -227,6 +244,15 @@ export default function ProjectDetail() {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         {renderContent()}
       </div>
+
+      {/* AI Generation Modal */}
+      <AIGenerationModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+        projectId={projectId}
+        projectName={project?.name || ''}
+        onGenerationComplete={handleAIGenerationComplete}
+      />
     </div>
   );
 }

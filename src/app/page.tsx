@@ -64,8 +64,14 @@ export default function Dashboard() {
     }
   };
 
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
-    <div className="bg-white rounded-lg shadow p-6">
+  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
+    title: string;
+    value: string | number;
+    icon: React.ComponentType<{ className?: string }>;
+    color: string;
+    subtitle?: string;
+  }) => (
+    <div className="bg-white rounded-lg shadow p-6 lg:p-8">
       <div className="flex items-center">
         <div className={`p-2 rounded-lg ${color}`}>
           <Icon className="h-6 w-6 text-white" />
@@ -97,7 +103,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Database Status */}
         {!isInitialized && (
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -116,9 +122,9 @@ export default function Dashboard() {
         )}
 
         {/* Overall Statistics */}
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">전체 현황</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="mb-12">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">전체 현황</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4 lg:gap-6">
             <StatCard
               title="총 프로젝트"
               value={statistics.totalProjects}
@@ -151,7 +157,9 @@ export default function Dashboard() {
         </div>
 
         {/* Project List */}
-        <ProjectList />
+        <div className="mt-12">
+          <ProjectList />
+        </div>
       </div>
     </div>
   );
