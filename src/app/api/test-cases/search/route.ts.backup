@@ -1,0 +1,89 @@
+import { NextRequest, NextResponse } from 'next/server';
+import db from '@/lib/db/database';
+import { filterTestCases, sortTestCases, getSearchSuggestions } from '@/lib/search/filterUtils';
+import { SearchFilters } from '@/lib/search/filterUtils';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    
+    // Extract search parameters
+    const query = searchParams.get('query') || '';
+    const status = searchParams.get('status') || '';
+    const priority = searchParams.get('priority') || '';
+    const project = searchParams.get('project') || '';
+    const tags = searchParams.get('tags') || '';
+    const dateFrom = searchParams.get('dateFrom') || '';
+    const dateTo = searchParams.get('dateTo') || '';
+    const sortBy = searchParams.get('sortBy') || 'created_at';
+    const sortOrder = (searchParams.get('sortOrder') as 'asc' | 'desc') || 'desc';
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const suggestions = searchParams.get('suggestions') === 'true';
+
+    // Get all test cases with their test suite information
+    const testCasesQuery = `
+      SELECT 
+        tc.*,
+        ts.name as test_suite_name,
+        p.name as project_name
+      FROM test_cases tc
+      LEFT JOIN test_suites ts ON tc.test_suite_id = ts.id
+      LEFT JOIN projects p ON ts.project_id = p.id
+      ORDER BY tc.created_at DESC
+    `;
+    
+    const testCases = db.prepare(testCasesQuery).all() as any[];
+
+    // Apply filters
+    const filters: SearchFilters = {
+      query,
+      status,
+      priority,
+      project,
+      tags,
+      dateFrom,
+      dateTo
+    };
+
+    let filteredCases = filterTestCases(testCases, filters);
+
+    // Get search suggestions if requested
+    if (suggestions) {
+      const suggestionsList = getSearchSuggestions(testCases, query);
+      return NextResponse.json({ suggestions: suggestionsList });
+    }
+
+    // Apply sorting
+    filteredCases = sortTestCases(filteredCases, sortBy, sortOrder);
+
+    // Apply pagination
+    const totalCount = filteredCases.length;
+    const totalPages = Math.ceil(totalCount / limit);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedCases = filteredCases.slice(startIndex, endIndex);
+
+    return NextResponse.json({
+      testCases: paginatedCases,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      },
+      filters: {
+        applied: filters,
+        totalResults: totalCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Search error:', error);
+    return NextResponse.json(
+      { error: '검색 중 오류가 발생했습니다.' },
+      { status: 500 }
+    );
+  }
+}
