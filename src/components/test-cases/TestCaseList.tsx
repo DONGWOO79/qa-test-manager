@@ -45,24 +45,29 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   const [isResizing, setIsResizing] = useState<number | null>(null);
   const [startX, setStartX] = useState<number>(0);
   const [startWidth, setStartWidth] = useState<number>(0);
-  
+
   // Selection and editing states
   const [selectedTestCases, setSelectedTestCases] = useState<Set<number>>(new Set());
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editingData, setEditingData] = useState<Record<number, Partial<TestCase> & { preCondition?: string; testStep?: string }>>({});
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  
+
 
 
   // Fetch projects
   // Parse description to extract pre-condition and test step
   const parseDescription = (description: string) => {
-    const preConditionMatch = description.match(/사전 조건:\s*([\s\S]*?)(?=확인 방법:|기대 결과:|$)/);
-    const testStepMatch = description.match(/확인 방법:\s*([\s\S]*?)(?=기대 결과:|$)/);
-    
+    // AI가 생성한 다양한 형식을 모두 지원하도록 개선
+    const preConditionMatch = description.match(/(?:사전 조건|사전조건|Pre-?condition|전제 조건):\s*([\s\S]*?)(?=\n\n|테스트 단계|확인 방법|예상 결과|기대 결과|$)/i);
+    const testStepMatch = description.match(/(?:테스트 단계|확인 방법|Test Step|시나리오 단계):\s*([\s\S]*?)(?=\n\n|예상 결과|기대 결과|$)/i);
+
+    // description에서 기본 설명 부분 추출 (첫 번째 줄 또는 첫 번째 섹션)
+    const basicDescMatch = description.match(/^([^\n]+)/);
+    const basicDescription = basicDescMatch ? basicDescMatch[1].trim() : "";
+
     return {
-      preCondition: preConditionMatch ? preConditionMatch[1].trim() : "",
-      testStep: testStepMatch ? testStepMatch[1].trim() : ""
+      preCondition: preConditionMatch ? preConditionMatch[1].trim() : basicDescription,
+      testStep: testStepMatch ? testStepMatch[1].trim() : "확인 방법이 명시되지 않음"
     };
   };
 
@@ -139,7 +144,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
 
     // 시트별 탭 추가
     Array.from(sheetNames).sort().forEach(sheetName => {
-      const count = testCases.filter(tc => 
+      const count = testCases.filter(tc =>
         extractSheetName(tc.category) === sheetName
       ).length;
       tabs.push({
@@ -157,7 +162,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     if (activeTab === 'all') {
       return testCases;
     }
-    
+
     // 시트명으로 필터링
     return testCases.filter(tc => {
       const match = tc.category.match(/^\[([^\]]+)\]/);
@@ -218,7 +223,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   // Handle status change
   const handleStatusChange = async (testCaseId: number, newStatus: string) => {
     setUpdatingTestCase(testCaseId);
-    
+
     try {
       const response = await fetch(`/api/test-cases/${testCaseId}`, {
         method: 'PUT',
@@ -247,7 +252,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   // Handle priority change
   const handlePriorityChange = async (testCaseId: number, newPriority: string) => {
     setUpdatingTestCase(testCaseId);
-    
+
     try {
       const response = await fetch(`/api/test-cases/${testCaseId}`, {
         method: 'PUT',
@@ -355,7 +360,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   const handleResizeStart = useCallback((e: React.MouseEvent, columnIndex: number) => {
     // Only allow resizing for pre-condition (index 3) and test step (index 4) columns
     if (columnIndex !== 3 && columnIndex !== 4) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
     setIsResizing(columnIndex);
@@ -366,20 +371,20 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   const handleResizeMove = useCallback((e: MouseEvent) => {
     if (isResizing !== null && (isResizing === 3 || isResizing === 4)) {
       const deltaX = e.clientX - startX;
-      
+
       // Get table width for percentage calculation
       const tableElement = document.querySelector('.test-cases-table');
       const tableWidth = tableElement?.clientWidth || 1000;
-      
+
       // Calculate percentage change
       const percentageChange = (deltaX / tableWidth) * 100;
-      
+
       // Define minimum percentages for resizable columns
       const minPercentages = [4, 10, 10, 12, 12, 8, 8, 12, 6];
-      
+
       // Calculate new percentage with constraints
       const newPercentage = Math.max(minPercentages[isResizing], startWidth + percentageChange);
-      
+
       setColumnWidths(prev => {
         const newWidths = [...prev];
         newWidths[isResizing] = newPercentage;
@@ -399,7 +404,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       document.addEventListener('mouseup', handleResizeEnd);
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      
+
       return () => {
         document.removeEventListener('mousemove', handleResizeMove);
         document.removeEventListener('mouseup', handleResizeEnd);
@@ -448,33 +453,33 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     const parts = originalDescription.split(/사전 조건:|확인 방법:|기대 결과:/);
     const beforePreCondition = parts[0] || '';
     const afterTestStep = parts[3] || '';
-    
+
     let newDescription = beforePreCondition;
     if (preCondition !== undefined) {
       newDescription += `사전 조건: ${preCondition}`;
     } else {
       newDescription += parts[1] ? `사전 조건: ${parts[1]}` : '';
     }
-    
+
     if (testStep !== undefined) {
       newDescription += `확인 방법: ${testStep}`;
     } else {
       newDescription += parts[2] ? `확인 방법: ${parts[2]}` : '';
     }
-    
+
     newDescription += afterTestStep;
     return newDescription;
   };
 
   const handleSaveAll = async () => {
     if (Object.keys(editingData).length === 0) return;
-    
+
     setIsSaving(true);
     try {
       const updatePromises = Object.entries(editingData).map(([testCaseId, data]) => {
         const testCase = testCases.find(tc => tc.id === parseInt(testCaseId));
         if (!testCase) return Promise.resolve();
-        
+
         // Reconstruct description if preCondition or testStep was edited
         let finalData = { ...data };
         if (data.preCondition !== undefined || data.testStep !== undefined) {
@@ -486,14 +491,14 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
           delete finalData.preCondition;
           delete finalData.testStep;
         }
-        
+
         return fetch(`/api/test-cases/${testCaseId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(finalData)
         });
       });
-      
+
       await Promise.all(updatePromises);
       setEditingData({});
       setIsEditing(false);
@@ -540,7 +545,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   return (
     <div className="space-y-6 w-full">
       {/* Search Bar */}
-      <SearchBar 
+      <SearchBar
         onSearch={handleSearch}
         projects={projects}
         totalResults={filteredTestCases.length}
@@ -597,17 +602,16 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 {tab.name} ({tab.count})
               </button>
             ))}
           </nav>
-          
+
           {/* Action Buttons */}
           <div className="flex items-center space-x-4">
             {selectedTestCases.size > 0 && (
@@ -618,11 +622,10 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
             {selectedTestCases.size > 0 && (
               <button
                 onClick={() => setIsEditing(!isEditing)}
-                className={`px-4 py-2 text-sm font-medium rounded-md ${
-                  isEditing 
-                    ? 'bg-gray-500 text-white hover:bg-gray-600' 
+                className={`px-4 py-2 text-sm font-medium rounded-md ${isEditing
+                    ? 'bg-gray-500 text-white hover:bg-gray-600'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
+                  }`}
               >
                 {isEditing ? '편집 취소' : '편집 모드'}
               </button>
@@ -661,20 +664,18 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
             <div style={{ width: `${columnWidths[2]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">카테고리</span>
             </div>
-            <div 
-              style={{ width: `${columnWidths[3]}%` }} 
-              className={`text-center px-2 border-r border-gray-300 ${
-                !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
-              }`}
+            <div
+              style={{ width: `${columnWidths[3]}%` }}
+              className={`text-center px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                }`}
               onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
             >
               <span className="text-sm font-medium text-gray-500">사전 조건</span>
             </div>
-            <div 
-              style={{ width: `${columnWidths[4]}%` }} 
-              className={`text-center px-2 border-r border-gray-300 ${
-                !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
-              }`}
+            <div
+              style={{ width: `${columnWidths[4]}%` }}
+              className={`text-center px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                }`}
               onMouseDown={!isEditing ? (e) => handleResizeStart(e, 4) : undefined}
             >
               <span className="text-sm font-medium text-gray-500">확인 방법</span>
@@ -706,7 +707,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
                   />
                 </div>
-                
+
                 {/* Title */}
                 <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
@@ -722,7 +723,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     </p>
                   )}
                 </div>
-                
+
                 {/* Category */}
                 <div style={{ width: `${columnWidths[2]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
@@ -738,13 +739,12 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     </span>
                   )}
                 </div>
-                
+
                 {/* Pre-condition */}
-                <div 
-                  style={{ width: `${columnWidths[3]}%` }} 
-                  className={`flex px-2 border-r border-gray-300 ${
-                    !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
-                  }`}
+                <div
+                  style={{ width: `${columnWidths[3]}%` }}
+                  className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                    }`}
                   onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
                 >
                   {/* Content area */}
@@ -771,9 +771,9 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                           placeholder="사전 조건을 입력하세요..."
                         />
                       ) : !expandedRows.has(testCase.id) ? (
-                        <span 
+                        <span
                           className="text-sm text-gray-600 leading-relaxed"
-                          style={{ 
+                          style={{
                             lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word'
@@ -786,7 +786,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                           ) : "사전 조건 없음"}
                         </span>
                       ) : parseDescription(testCase.description).preCondition && (
-                        <div 
+                        <div
                           className="text-sm text-gray-600 leading-relaxed"
                           style={{
                             wordBreak: 'keep-all',
@@ -802,11 +802,10 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
 
                 {/* Test Step */}
-                <div 
-                  style={{ width: `${columnWidths[4]}%` }} 
-                  className={`flex px-2 border-r border-gray-300 ${
-                    !isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
-                  }`}
+                <div
+                  style={{ width: `${columnWidths[4]}%` }}
+                  className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                    }`}
                   onMouseDown={!isEditing ? (e) => handleResizeStart(e, 4) : undefined}
                 >
                   {/* Content area */}
@@ -833,9 +832,9 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                           placeholder="확인 방법을 입력하세요..."
                         />
                       ) : !expandedRows.has(testCase.id) ? (
-                        <span 
+                        <span
                           className="text-sm text-gray-600 leading-relaxed"
-                          style={{ 
+                          style={{
                             lineHeight: columnWidths[4] > 25 ? '1.6' : columnWidths[4] > 20 ? '1.4' : '1.2',
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word'
@@ -848,7 +847,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                           ) : "확인 방법 없음"}
                         </span>
                       ) : parseDescription(testCase.description).testStep && (
-                        <div 
+                        <div
                           className="text-sm text-gray-600 leading-relaxed"
                           style={{
                             wordBreak: 'keep-all',
@@ -862,7 +861,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Priority */}
                 <div style={{ width: `${columnWidths[5]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
@@ -900,7 +899,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     </span>
                   )}
                 </div>
-                
+
                 {/* Status */}
                 <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
@@ -944,14 +943,14 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     </span>
                   )}
                 </div>
-                
+
                 {/* Created Date */}
                 <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </span>
                 </div>
-                
+
                 {/* Actions */}
                 <div style={{ width: `${columnWidths[8]}%` }} className="flex justify-center items-center px-2">
                   <div className="flex items-center justify-center space-x-2">

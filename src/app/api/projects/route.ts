@@ -27,8 +27,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, description, status = 'active' } = body;
 
-    // 임시로 기본 사용자 ID 사용 (개발용)
-    const userId = 1;
+    // 기본 사용자 ID 확인 및 생성
+    let userId = db.prepare('SELECT id FROM users WHERE role = ?').get('admin')?.id;
+    
+    if (!userId) {
+      // 기본 사용자가 없으면 생성
+      const insertUser = db.prepare(`
+        INSERT INTO users (username, email, password_hash, role) 
+        VALUES (?, ?, ?, ?)
+      `);
+      const userResult = insertUser.run('admin', 'admin@test.com', 'hashed_password', 'admin');
+      userId = userResult.lastInsertRowid;
+    }
 
     const result = db.prepare(`
       INSERT INTO projects (

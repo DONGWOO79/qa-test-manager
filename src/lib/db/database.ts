@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 
 // 데이터베이스 파일 경로 설정
-const dbPath = process.env.NODE_ENV === 'production' 
+const dbPath = process.env.NODE_ENV === 'production'
   ? path.join(process.cwd(), 'qa_test_manager.db')
   : path.join(process.cwd(), 'database.db');
 
@@ -12,7 +12,7 @@ const db = new Database(dbPath);
 // 데이터베이스 초기화 함수
 export function initializeDatabase() {
   console.log('Starting database initialization...');
-  
+
   // 사용자 테이블
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -65,6 +65,8 @@ export function initializeDatabase() {
       project_id INTEGER NOT NULL,
       priority TEXT CHECK(priority IN ('high', 'medium', 'low', 'critical')) DEFAULT 'medium',
       status TEXT CHECK(status IN ('draft', 'active', 'deprecated', 'pass', 'fail', 'na', 'not_run', 'in_progress', 'passed', 'failed', 'blocked', 'skipped')) DEFAULT 'draft',
+      pre_condition TEXT,
+      test_strategy TEXT,
       expected_result TEXT,
       created_by INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -74,6 +76,19 @@ export function initializeDatabase() {
       FOREIGN KEY (created_by) REFERENCES users (id)
     )
   `);
+
+  // 기존 테이블에 새 필드 추가 (이미 테이블이 존재하는 경우)
+  try {
+    db.exec('ALTER TABLE test_cases ADD COLUMN pre_condition TEXT');
+  } catch (error) {
+    // 필드가 이미 존재하면 무시
+  }
+
+  try {
+    db.exec('ALTER TABLE test_cases ADD COLUMN test_strategy TEXT');
+  } catch (error) {
+    // 필드가 이미 존재하면 무시
+  }
 
   // 테스트 스텝 테이블
   db.exec(`
@@ -137,6 +152,30 @@ export function initializeDatabase() {
       FOREIGN KEY (executed_by) REFERENCES users (id)
     )
   `);
+
+  // 기본 사용자 생성 (없는 경우에만)
+  const existingAdmin = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+  if (!existingAdmin) {
+    db.prepare(`
+      INSERT INTO users (username, email, password_hash, role) 
+      VALUES (?, ?, ?, ?)
+    `).run('admin', 'admin@test.com', 'hashed_password', 'admin');
+    console.log('Default admin user created');
+  }
+
+  // 기본 테스트 카테고리 생성 (프로젝트별로)
+  const projects = db.prepare('SELECT id FROM projects').all();
+  for (const project of projects) {
+    const existingCategories = db.prepare('SELECT COUNT(*) as count FROM test_categories WHERE project_id = ?').get(project.id);
+    if (existingCategories.count === 0) {
+      const categories = ['기능테스트', '성능테스트', '보안테스트', '사용자인터페이스', '통합테스트', '로그인', '회원가입', '상품관리', '주문관리'];
+      const insertCategory = db.prepare('INSERT INTO test_categories (name, project_id) VALUES (?, ?)');
+      for (const category of categories) {
+        insertCategory.run(category, project.id);
+      }
+      console.log(`Default categories created for project ${project.id}`);
+    }
+  }
 
   console.log('Database initialized successfully');
 }
