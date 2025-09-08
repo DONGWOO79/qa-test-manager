@@ -34,17 +34,35 @@ async function extractTextFromFile(filePath: string, fileType: string): Promise<
       case '.pdf':
         console.log('PDF 파일 처리');
         try {
-          // 동적 import 사용
-          const pdfParse = await import('pdf-parse').then(module => module.default);
+          console.log('Starting PDF parsing, file size:', fileContent.length);
 
-          console.log('PDF 파싱 시작, 파일 크기:', fileContent.length);
+          // 직접 pdf-parse 사용 (단순하고 확실한 방법)
+          console.log('PDF 파싱 시작 - 직접 방식');
+          console.log('fileContent 타입:', typeof fileContent);
+          console.log('fileContent Buffer 여부:', Buffer.isBuffer(fileContent));
+          console.log('fileContent 길이:', fileContent.length);
+
+          // Node.js 환경에서 직접 실행 (터미널 테스트에서 성공한 방식)
+          let pdfParse;
+          
+          try {
+            // CommonJS require 직접 사용
+            pdfParse = eval('require')('pdf-parse');
+            console.log('pdf-parse 로드 성공');
+          } catch (loadError) {
+            console.log('pdf-parse 로드 실패:', loadError.message);
+            throw new Error(`PDF 라이브러리를 로드할 수 없습니다: ${loadError.message}`);
+          }
+
+          // PDF 파싱 실행
           const pdfResult = await pdfParse(fileContent);
+          console.log('PDF 파싱 성공!');
+          console.log('페이지 수:', pdfResult.numpages);
+          console.log('원본 텍스트 길이:', pdfResult.text.length);
 
-          // 텍스트 길이 제한을 늘려서 더 많은 내용 처리
-          let text = pdfResult.text;
-          console.log('PDF 원본 텍스트 길이:', text.length);
-
-          if (text.length > 20000) { // 15000 -> 20000으로 증가
+          // 텍스트 길이 제한
+          let text = pdfResult.text.trim();
+          if (text.length > 20000) {
             text = text.substring(0, 20000) + "\n\n... (내용이 너무 길어서 앞부분만 사용)";
             console.log('PDF 텍스트 길이 제한 적용:', text.length);
           }
@@ -54,24 +72,11 @@ async function extractTextFromFile(filePath: string, fileType: string): Promise<
           return text;
         } catch (pdfError) {
           console.error('PDF 처리 오류:', pdfError);
-          // PDF 처리 실패 시 파일명 기반으로 더 상세한 텍스트 생성
-          const fileName = path.basename(filePath, '.pdf');
-          const baseText = `
-PDF 파일 "${fileName}"을 분석하여 테스트케이스를 생성합니다.
+          console.error('오류 상세:', pdfError.message);
+          console.error('오류 스택:', pdfError.stack);
 
-파일명 기반 추정 내용:
-- 프로젝트명: ${fileName.includes('GOLFVX') ? 'GOLFVX' : '프로젝트'}
-- 문서 유형: ${fileName.includes('기획') ? '기획서' : fileName.includes('요구사항') ? '요구사항서' : '프로젝트 문서'}
-- 주요 기능: ${fileName.includes('FMS') ? 'Fleet Management System (차량 관리 시스템)' : '시스템 개선'}
-
-예상 테스트 영역:
-- 사용자 인터페이스 개선
-- 시스템 성능 최적화
-- 데이터 관리 기능
-- 보안 및 접근 제어
-          `;
-          console.log('PDF 처리 실패, 기본 텍스트 생성:', baseText.length);
-          return baseText;
+          // PDF 파싱 실패 시 명확한 오류 발생 - AI가 추측하지 못하도록 함
+          throw new Error(`PDF 파일을 읽을 수 없습니다. 실제 문서 내용을 추출할 수 없어 테스트케이스를 생성할 수 없습니다. 오류: ${pdfError.message}`);
         }
 
       case '.docx':
@@ -115,8 +120,106 @@ PDF 파일 "${fileName}"을 분석하여 테스트케이스를 생성합니다.
   }
 }
 
-// AI 프롬프트 생성 (Ollama 앱과 동일하게)
-function createAIPrompt(content: string, projectName: string): string {
+// Ollama Vision을 사용한 이미지 분석 함수
+async function analyzeImagesWithVision(imageFiles: File[]): Promise<string> {
+  if (imageFiles.length === 0) {
+    return '';
+  }
+
+  try {
+    console.log(`${imageFiles.length}개 이미지 분석 시작`);
+
+    // 이미지 파일 필터링 (PDF, 문서 파일 제외)
+    const validImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/bmp'];
+    const validImages = imageFiles.filter(file => {
+      const isValidImage = validImageTypes.includes(file.type);
+      if (!isValidImage) {
+        console.warn(`⚠️ 이미지가 아닌 파일 제외: ${file.name} (${file.type})`);
+      }
+      return isValidImage;
+    });
+
+    if (validImages.length === 0) {
+      console.log('유효한 이미지 파일이 없음');
+      return '';
+    }
+
+    console.log(`${validImages.length}개의 유효한 이미지 파일 발견`);
+
+    let imageAnalysis = '\n\n=== 다이어그램/차트 분석 (Ollama Vision) ===\n';
+
+    for (let i = 0; i < validImages.length; i++) {
+      const file = validImages[i];
+      console.log(`이미지 ${i + 1} 분석 중: ${file.name}`);
+
+      try {
+        // 파일을 Buffer로 변환
+        const fileBuffer = Buffer.from(await file.arrayBuffer());
+        const base64Image = fileBuffer.toString('base64');
+
+        // Ollama Vision API 호출
+        const response = await fetch('http://localhost:11434/api/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llava:7b',
+            prompt: `이 이미지를 분석하여 다음 정보를 한국어로 추출해주세요:
+1. 이미지에 포함된 텍스트나 라벨들
+2. 다이어그램이나 차트의 구조 (박스, 화살표, 연결 관계)
+3. 프로세스 흐름이나 단계
+4. 시스템 구성 요소나 기능들
+5. 테스트해야 할 기능이나 시나리오
+
+간결하고 정확하게 분석해주세요.`,
+            images: [base64Image],
+            stream: false,
+            options: {
+              temperature: 0.3,
+              num_ctx: 2048
+            }
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ollama Vision API 오류: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.response) {
+          imageAnalysis += `\n이미지 ${i + 1} (${file.name}):\n`;
+          imageAnalysis += `파일 정보: ${file.type}, ${Math.round(file.size / 1024)}KB\n`;
+          imageAnalysis += `분석 결과:\n${result.response}\n`;
+          console.log(`이미지 ${i + 1} 분석 완료`);
+        } else {
+          console.warn(`이미지 ${i + 1} 분석 결과 없음`);
+          imageAnalysis += `\n이미지 ${i + 1} (${file.name}): 분석 결과를 받지 못했습니다.\n`;
+        }
+
+      } catch (imageError) {
+        console.error(`이미지 ${i + 1} 분석 실패:`, imageError);
+        imageAnalysis += `\n이미지 ${i + 1} (${file.name}): 분석 중 오류 발생\n`;
+      }
+
+      // 이미지 간 간격
+      if (i < validImages.length - 1) {
+        imageAnalysis += '\n---\n';
+      }
+    }
+
+    console.log('전체 이미지 분석 완료');
+    return imageAnalysis;
+
+  } catch (error) {
+    console.error('이미지 분석 오류:', error);
+    return '\n\n=== 이미지 분석 실패 ===\n이미지 분석 중 오류가 발생했습니다.\n';
+  }
+}
+
+// AI 프롬프트 생성 (텍스트 + 이미지 분석 결합)
+function createAIPrompt(content: string, projectName: string, imageAnalysis: string = ''): string {
   // 내용이 너무 길면 요약 (제한을 늘려서 더 많은 내용 처리)
   let processedContent = content;
   if (content.length > 15000) { // 10000 -> 15000으로 증가
@@ -126,31 +229,7 @@ function createAIPrompt(content: string, projectName: string): string {
 
   return `당신은 전문 QA 엔지니어입니다. 아래 제공된 문서는 "${projectName}" 프로젝트의 실제 기획서입니다. 이 문서의 내용만을 기반으로 테스트케이스를 생성해주세요.
 
-**경고: 문서에 없는 내용은 절대 추가하지 마세요. 오직 문서에 명시된 기능만 테스트하세요.**
-
-**이 문서의 주요 내용:**
-- GOLFVX FMS 개선 기획
-- No Show 시스템 개발 (예약 취소, 위약금 처리)
-- 카드 등록 및 결제 시스템 (SetupIntent)
-- 예약 상태 관리 (예약확정, 예약취소, 이용완료, No Show, 타석이동)
-- 매출 관리 및 결제 취소
-- 직원 권한 설정
-- APP 예약 연동
-
-**반드시 이런 테스트케이스를 만드세요:**
-1. "No Show 처리 위약금 청구 테스트"
-2. "카드 등록 SetupIntent 테스트"  
-3. "예약 상태 변경 테스트 (예약확정→이용완료)"
-4. "결제 취소 7일 이내 제한 테스트"
-5. "직원 권한별 No Show 처리 접근 테스트"
-6. "앱 예약 시 카드 등록 필수 확인 테스트"
-7. "매장별 취소 정책 설정 테스트"
-
-**절대 만들면 안 되는 테스트케이스:**
-- 골프카트 등록 (문서에 없음)
-- 배터리 모니터링 (문서에 없음)  
-- GPS 추적 (문서에 없음)
-- 일반적인 차량 관리 기능
+**중요: 반드시 아래 제공된 실제 문서 내용만을 기반으로 테스트케이스를 생성하세요. 문서에 없는 내용은 절대 추가하지 마세요.**
 
 **테스트케이스 형식:**
 각 테스트케이스는 다음 필드를 포함 (모든 내용을 한국어로):
@@ -167,28 +246,53 @@ function createAIPrompt(content: string, projectName: string): string {
 20개 이상 생성하되, 반드시 문서 내용만 기반으로 하세요.
 JSON 배열 형식으로만 응답하세요.
 
-기획서 내용:
-${processedContent}
+**실제 문서 내용:**
+${processedContent}${imageAnalysis}
 
-**예시 (문서 내용을 기반으로 한 올바른 테스트케이스):**
-[
-  {
-    "title": "골프카트 GC001 배터리 상태 모니터링",
-    "description": "골프카트 GC001의 배터리 잔량이 실시간으로 정확하게 표시되는지 확인",
-    "category": "기능테스트",
-    "priority": "high",
-    "status": "draft",
-    "preCondition": "골프카트 GC001이 시스템에 등록되어 있고, GPS 모듈이 정상 작동 중",
-    "testStep": "1. 관리자 대시보드 접속\n2. 카트 현황 메뉴 클릭\n3. GC001 카트 선택\n4. 배터리 상태 정보 확인",
-    "expectedResult": "배터리 잔량이 %로 표시되고, 충전 필요 시 알림이 표시됨",
-    "testStrategy": "실제 카트 배터리 상태와 시스템 표시값 비교 검증"
-  }
-]
-
-**주의사항: JSON 배열만 응답하고, 다른 텍스트나 설명은 포함하지 마세요. 모든 필드 값은 한국어로 작성해야 합니다.**`;
+**주의사항: 위 문서 내용과 다이어그램 분석 결과를 모두 기반으로 JSON 배열 형식의 테스트케이스를 생성하세요. 다른 텍스트나 설명은 포함하지 마세요. 모든 필드 값은 한국어로 작성해야 합니다.**`;
 }
 
 // Ollama API 호출 (무료 로컬 AI)
+// thinking 내용을 기반으로 JSON 생성하는 함수
+async function generateJSONFromThinking(thinkingContent: string): Promise<string> {
+  try {
+    const simplePrompt = `다음 thinking 내용을 기반으로 테스트케이스 JSON 배열을 생성해주세요. 
+    오직 JSON 배열만 응답하세요. 다른 텍스트는 포함하지 마세요.
+    
+    각 테스트케이스는 다음 필드를 포함해야 합니다:
+    - title, description, category, priority, status, preCondition, testStep, expectedResult, testStrategy
+    
+    Thinking 내용: ${thinkingContent.substring(0, 2000)}`;
+
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-oss:20b',
+        prompt: simplePrompt,
+        stream: false,
+        options: {
+          temperature: 0.1,
+          num_ctx: 4096,
+          seed: Math.floor(Math.random() * 1000000)
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result.response || '[]';
+  } catch (error) {
+    console.error('generateJSONFromThinking 오류:', error);
+    return '[]';
+  }
+}
+
 async function callOllama(prompt: string): Promise<any[]> {
   try {
     console.log('Ollama API 호출 시작...');
@@ -202,13 +306,15 @@ async function callOllama(prompt: string): Promise<any[]> {
         model: 'gpt-oss:20b',
         prompt: prompt,
         stream: false,
+        context: null, // 컨텍스트 명시적 리셋
         options: {
           temperature: 0.2, // 더 일관성 있는 응답을 위해 낮춤
           top_p: 0.8,
           num_predict: 8000, // 더 긴 응답을 위해 토큰 수 증가
           stop: ['```', '---', 'Note:', '참고:', '설명:', 'explanation:'], // JSON 응답만 받기 위해 중단 토큰 설정
           repeat_penalty: 1.1, // 반복 방지
-          seed: -1 // 랜덤 시드
+          seed: Math.floor(Math.random() * 1000000), // 진짜 랜덤 시드
+          num_ctx: 4096 // 컨텍스트 크기 명시적 설정
         }
       }),
       signal: AbortSignal.timeout(240000) // 240초 타임아웃으로 증가
@@ -221,8 +327,43 @@ async function callOllama(prompt: string): Promise<any[]> {
     const result = await response.json();
     console.log('Ollama 응답:', result);
 
-    if (!result.response) {
-      throw new Error('Ollama에서 응답을 받지 못했습니다.');
+    // Update Ollama response handling
+    if (!result.response || result.response.trim() === '') {
+      console.log('Ollama response is empty, checking thinking field:', result.thinking ? 'exists' : 'does not exist');
+      if (result.thinking) {
+        console.log('Thinking content length:', result.thinking.length);
+        console.log('Thinking preview:', result.thinking.substring(0, 500));
+
+        // thinking 필드에서 JSON 배열 추출 시도 - 더 강력한 패턴 매칭
+        const thinkingContent = result.thinking;
+
+        // 여러 패턴으로 JSON 추출 시도
+        let jsonMatch = thinkingContent.match(/\[[\s\S]*?\]/g);
+        if (!jsonMatch) {
+          // 백틱 안의 JSON 찾기
+          jsonMatch = thinkingContent.match(/```json\s*(\[[\s\S]*?\])\s*```/);
+          if (jsonMatch) jsonMatch = [jsonMatch[1]];
+        }
+        if (!jsonMatch) {
+          // 단순 배열 패턴
+          jsonMatch = thinkingContent.match(/\[\s*\{[\s\S]*?\}\s*\]/);
+          if (jsonMatch) jsonMatch = [jsonMatch[0]];
+        }
+
+        if (jsonMatch && jsonMatch[0]) {
+          console.log('Found JSON in thinking, attempting to parse');
+          console.log('Extracted JSON preview:', jsonMatch[0].substring(0, 200));
+          result.response = jsonMatch[0];
+        } else {
+          console.log('No JSON found in thinking field, generating from thinking content');
+          // thinking 내용을 기반으로 AI에게 다시 JSON 생성 요청
+          result.response = await generateJSONFromThinking(result.thinking);
+        }
+      }
+
+      if (!result.response || result.response.trim() === '') {
+        throw new Error('No response received from Ollama.');
+      }
     }
 
     // JSON 응답 파싱 시도
@@ -748,6 +889,9 @@ export async function POST(request: NextRequest) {
     const projectId = formData.get('projectId') as string;
     const projectName = formData.get('projectName') as string;
 
+    // 추가: 이미지 파일들 (다이어그램/차트)
+    const imageFiles = formData.getAll('images') as File[];
+
     // 파일 크기 체크 (5MB 제한)
     const maxFileSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxFileSize) {
@@ -809,9 +953,18 @@ export async function POST(request: NextRequest) {
     // 파일에서 텍스트 추출
     console.log('텍스트 추출 시작');
     let content: string;
+    let imageAnalysis: string = '';
+
     try {
       content = await extractTextFromFile(filePath, file.type);
       console.log('텍스트 추출 완료, 길이:', content.length);
+
+      // 이미지 파일들 분석
+      console.log('이미지 분석 시작');
+      imageAnalysis = await analyzeImagesWithVision(imageFiles);
+      console.log('이미지 분석 완료');
+      console.log('이미지 분석 결과 길이:', imageAnalysis.length);
+      console.log('이미지 분석 결과 미리보기:', imageAnalysis.substring(0, 500));
     } catch (error) {
       console.error('텍스트 추출 오류:', error);
       throw new Error('파일 내용을 읽을 수 없습니다.');
@@ -819,8 +972,18 @@ export async function POST(request: NextRequest) {
 
     // AI 프롬프트 생성
     console.log('AI 프롬프트 생성');
-    const prompt = createAIPrompt(content, projectName);
+    console.log('추출된 내용 미리보기 (첫 500자):', content.substring(0, 500));
+    console.log('이미지 분석 결과 길이:', imageAnalysis.length);
+    const prompt = createAIPrompt(content, projectName, imageAnalysis);
     console.log('프롬프트 길이:', prompt.length);
+    console.log('프롬프트 내용 미리보기 (마지막 1000자):', prompt.substring(prompt.length - 1000));
+
+    // 🔍 디버깅: 프롬프트에 실제 내용이 포함되는지 확인
+    console.log('🔍 프롬프트 키워드 검사:');
+    console.log('- "비밀번호" 포함:', prompt.includes('비밀번호') ? '✅' : '❌');
+    console.log('- "QMS" 포함:', prompt.includes('QMS') ? '✅' : '❌');
+    console.log('- "90일" 포함:', prompt.includes('90일') ? '✅' : '❌');
+    console.log('- 이미지 분석 포함:', prompt.includes('다이어그램/차트 분석') ? '✅' : '❌');
 
     // AI 호출
     console.log('Ollama API 호출 시작');
@@ -885,8 +1048,8 @@ export async function POST(request: NextRequest) {
           } else {
             // 카테고리가 없으면 새로 생성
             console.log(`카테고리 '${testCase.category}' 없음. 새로 생성합니다.`);
-            const insertCategoryStmt = db.prepare('INSERT INTO test_categories (name) VALUES (?)');
-            const insertResult = insertCategoryStmt.run(testCase.category || '기능테스트');
+            const insertCategoryStmt = db.prepare('INSERT INTO test_categories (name, project_id) VALUES (?, ?)');
+            const insertResult = insertCategoryStmt.run(testCase.category || '기능테스트', projectId);
             categoryId = insertResult.lastInsertRowid as number;
             console.log(`새 카테고리 생성 완료: ${testCase.category} (ID: ${categoryId})`);
           }
@@ -902,12 +1065,47 @@ export async function POST(request: NextRequest) {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         `);
 
+        // Status 값을 DB 허용 값으로 매핑
+        const statusMap: { [key: string]: string } = {
+          'ready': 'draft',
+          'pending': 'draft',
+          'not started': 'draft',
+          'active': 'active',
+          'in progress': 'in_progress',
+          'completed': 'passed',
+          'done': 'passed',
+          'failed': 'failed',
+          'blocked': 'blocked',
+          'skipped': 'skipped'
+        };
+
+        const rawStatus = (testCase.status || 'draft').toLowerCase();
+        const dbStatus = statusMap[rawStatus] || 'draft';
+
+        // Priority 값을 DB 허용 값으로 매핑
+        const priorityMap: { [key: string]: string } = {
+          '상': 'high',
+          '높음': 'high',
+          'high': 'high',
+          '중': 'medium',
+          '보통': 'medium',
+          'medium': 'medium',
+          '하': 'low',
+          '낮음': 'low',
+          'low': 'low',
+          '긴급': 'critical',
+          'critical': 'critical'
+        };
+
+        const rawPriority = (testCase.priority || 'medium').toLowerCase();
+        const dbPriority = priorityMap[rawPriority] || 'medium';
+
         const result = stmt.run(
           testCase.title || '제목 없음',
           description,
           categoryId,
-          normalizedPriority,
-          normalizedStatus,
+          dbPriority,
+          dbStatus,
           parseInt(projectId),
           testCase.expectedResult || '',
           1  // created_by (admin user)

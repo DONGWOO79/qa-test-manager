@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { XMarkIcon, DocumentArrowUpIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, DocumentArrowUpIcon, SparklesIcon, PhotoIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 interface AIGenerationModalProps {
   isOpen: boolean;
@@ -21,13 +21,19 @@ export default function AIGenerationModal({
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const supportedFormats = [
     '.pdf', '.docx', '.doc', '.pptx', '.ppt', 
     '.xlsx', '.xls', '.csv', '.txt'
+  ];
+
+  const supportedImageFormats = [
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'
   ];
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,6 +42,19 @@ export default function AIGenerationModal({
       setError(null);
       setUploadedFile(file);
     }
+  };
+
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const newImageFiles = Array.from(files);
+      setImageFiles(prev => [...prev, ...newImageFiles]);
+      setError(null);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleDrop = (event: React.DragEvent) => {
@@ -67,6 +86,11 @@ export default function AIGenerationModal({
       formData.append('file', uploadedFile);
       formData.append('projectId', projectId);
       formData.append('projectName', projectName);
+      
+      // 이미지 파일들 추가
+      imageFiles.forEach((imageFile) => {
+        formData.append('images', imageFile);
+      });
 
       const response = await fetch('/api/ai/generate-testcases', {
         method: 'POST',
@@ -97,10 +121,14 @@ export default function AIGenerationModal({
 
   const resetForm = () => {
     setUploadedFile(null);
+    setImageFiles([]);
     setError(null);
     setProgress(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (imageInputRef.current) {
+      imageInputRef.current.value = '';
     }
   };
 
@@ -196,6 +224,79 @@ export default function AIGenerationModal({
                      <p>지원 형식: {supportedFormats.join(', ')}</p>
                      <p>파일 크기 제한: 최대 5MB</p>
                    </div>
+          </div>
+
+          {/* Image Upload Section */}
+          <div className="mb-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <PhotoIcon className="h-5 w-5 mr-2 text-blue-600" />
+              다이어그램/차트 이미지 (선택사항)
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              플로우차트, 시스템 구조도, UI 목업 등의 이미지를 추가하면 더 정확한 테스트케이스를 생성할 수 있습니다.
+            </p>
+            
+            <div className="border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-gray-700">
+                  업로드된 이미지: {imageFiles.length}개
+                </span>
+                <button
+                  onClick={() => imageInputRef.current?.click()}
+                  className="bg-blue-50 text-blue-600 px-3 py-1 rounded text-sm hover:bg-blue-100 flex items-center space-x-1"
+                >
+                  <PhotoIcon className="h-4 w-4" />
+                  <span>이미지 추가</span>
+                </button>
+              </div>
+              
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept={supportedImageFormats.join(',')}
+                onChange={handleImageSelect}
+                multiple
+                className="hidden"
+              />
+              
+              {/* Image Preview */}
+              {imageFiles.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {imageFiles.map((file, index) => (
+                    <div key={index} className="relative bg-gray-50 rounded-lg p-3 border">
+                      <div className="flex items-center space-x-2">
+                        <PhotoIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {Math.round(file.size / 1024)}KB
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => removeImage(index)}
+                          className="text-red-400 hover:text-red-600 p-1"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {imageFiles.length === 0 && (
+                <div className="text-center py-6 text-gray-500 text-sm">
+                  아직 이미지가 업로드되지 않았습니다.
+                </div>
+              )}
+              
+              <div className="mt-3 text-xs text-gray-500">
+                <p>지원 형식: {supportedImageFormats.join(', ')}</p>
+                <p>여러 이미지를 동시에 선택할 수 있습니다.</p>
+              </div>
+            </div>
           </div>
 
           {/* Error Display */}
