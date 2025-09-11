@@ -4,7 +4,231 @@ import path from 'path';
 import fs from 'fs';
 import { writeFile } from 'fs/promises';
 
+// Spec Kit 관련 import
+import {
+  SpecKitSpecification,
+  ExtractedContent,
+  SpecKitGenerationResult,
+  TestCaseGenerationContext
+} from '@/types/spec-kit';
+import { SpecKitGenerator, SpecKitValidator } from '@/lib/spec-kit/spec-kit-utils';
+import { SPEC_KIT_CONFIG } from '@/lib/spec-kit/spec-kit-config';
+
 const dbPath = path.join(process.cwd(), 'database.db');
+
+/**
+ * AI 기반 명세화 전문가 - PDF 내용을 상세 명세서로 변환
+ */
+async function createDetailedSpecificationWithAI(
+  extractedText: string,
+  imageAnalysis: string,
+  projectName: string
+): Promise<string> {
+  console.log('🔍 AI 명세화 전문가 시작...');
+
+  const combinedText = imageAnalysis ?
+    `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}` :
+    extractedText;
+
+  const specificationPrompt = `당신은 요구사항 분석 및 명세화 전문가입니다.
+다음 문서를 분석하여 완전하고 상세한 기능 명세서를 작성해주세요.
+
+**프로젝트명**: ${projectName}
+
+**원본 문서**:
+${combinedText}
+
+**명세화 지침**:
+1. **숨겨진 요구사항 발굴**: 문서에서 암시되거나 생략된 기능들을 추론하여 명시
+2. **비즈니스 규칙 추출**: 업무 규칙과 제약 조건을 구체적으로 정의
+3. **예외 상황 식별**: 오류, 실패, 경계 조건 등 모든 예외 상황 분석
+4. **사용자 여정 완성**: 전체적인 사용자 경험 흐름을 단계별로 상세화
+5. **데이터 흐름 분석**: 입력, 처리, 출력 과정의 모든 데이터 변환 과정
+6. **인터페이스 정의**: UI/UX 요소와 시스템 간 상호작용 명세
+
+**출력 형식**:
+## 1. 기능 개요
+[전체 기능에 대한 명확한 설명]
+
+## 2. 상세 요구사항
+### 2.1 기본 기능
+- [구체적인 기능 나열]
+
+### 2.2 비즈니스 규칙
+- [업무 규칙과 제약조건]
+
+### 2.3 예외 처리
+- [오류 상황과 처리 방법]
+
+## 3. 사용자 시나리오
+### 3.1 정상 시나리오
+[단계별 상세 흐름]
+
+### 3.2 예외 시나리오  
+[오류 상황별 흐름]
+
+### 3.3 경계값 시나리오
+[한계 상황 처리]
+
+## 4. 데이터 명세
+### 4.1 입력 데이터
+[입력값, 형식, 제약조건]
+
+### 4.2 출력 데이터
+[결과값, 형식, 조건]
+
+## 5. 인터페이스 명세
+### 5.1 사용자 인터페이스
+[화면 구성, 입력 요소, 버튼 등]
+
+### 5.2 시스템 인터페이스
+[API, 데이터베이스, 외부 연동]
+
+**중요**: 원본 문서의 내용을 기반으로 하되, 실제 시스템 구현에 필요한 모든 세부사항을 추론하여 포함시켜주세요.
+테스트 케이스 작성에 필요한 모든 정보가 포함되도록 상세하게 작성해주세요.`;
+
+  try {
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-oss:20b',
+        prompt: specificationPrompt,
+        stream: false,
+        options: {
+          temperature: 0.2, // 명세화는 정확성이 중요
+          top_p: 0.9,
+          max_tokens: 6000, // 상세한 명세서를 위해 더 많은 토큰
+        }
+      }),
+      signal: AbortSignal.timeout(300000) // 5분
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI 명세화 실패: ${response.status}`);
+    }
+
+    const result = await response.json();
+    const detailedSpec = result.response || '';
+
+    console.log('✅ AI 명세화 완료, 길이:', detailedSpec.length);
+    return detailedSpec;
+
+  } catch (error) {
+    console.error('❌ AI 명세화 실패:', error);
+    return combinedText; // Fallback: 원본 텍스트 반환
+  }
+}
+
+/**
+ * PDF 내용을 Spec Kit 명세서로 변환하는 함수
+ */
+async function generateSpecKitSpecification(
+  extractedText: string,
+  imageAnalysis: string,
+  projectName: string
+): Promise<SpecKitGenerationResult> {
+  console.log('🔄 Spec Kit 명세서 생성 시작...');
+  console.log('- 텍스트 길이:', extractedText.length);
+  console.log('- 이미지 분석 길이:', imageAnalysis.length);
+
+  try {
+    // 추출된 내용을 ExtractedContent 형태로 구성
+    const extractedContent: ExtractedContent = {
+      text: extractedText,
+      images: imageAnalysis ? [imageAnalysis] : [],
+      metadata: {
+        pages: 1,
+        title: projectName,
+        createdDate: new Date().toISOString()
+      }
+    };
+
+    // 텍스트와 이미지 분석 결합
+    const combinedText = imageAnalysis ?
+      `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}` :
+      extractedText;
+
+    extractedContent.text = combinedText;
+
+    // Spec Kit 명세서 생성
+    const specResult = await SpecKitGenerator.generateSpecification(extractedContent, projectName);
+
+    console.log('✅ Spec Kit 명세서 생성 완료');
+    console.log('- 신뢰도:', specResult.confidence);
+    console.log('- 경고 수:', specResult.warnings.length);
+    console.log('- 사용자 스토리 수:', specResult.specification.functionality.userStories.length);
+    console.log('- 주요 시나리오 수:', specResult.specification.scenarios.primary.length);
+
+    // 명세서 검증
+    const validation = SpecKitValidator.validate(specResult.specification);
+    if (!validation.isValid) {
+      console.log('⚠️ 명세서 검증 오류:', validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+      console.log('⚠️ 명세서 검증 경고:', validation.warnings);
+    }
+
+    return specResult;
+
+  } catch (error) {
+    console.error('❌ Spec Kit 명세서 생성 실패:', error);
+
+    // 실패시 기본 명세서 생성
+    const fallbackSpec: SpecKitSpecification = {
+      id: `spec-${Date.now()}`,
+      title: projectName,
+      version: '1.0.0',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      functionality: {
+        overview: extractedText.substring(0, 500) + '...',
+        purpose: `${projectName}의 기능 구현`,
+        scope: ['기본 기능'],
+        userStories: [],
+        businessRules: []
+      },
+      technical: {
+        architecture: ['웹 기반 시스템'],
+        technologies: ['React', 'TypeScript'],
+        integrations: [],
+        performance: [],
+        security: []
+      },
+      scenarios: {
+        primary: [],
+        alternative: [],
+        exception: [],
+        edge: []
+      },
+      constraints: {
+        functional: [],
+        technical: [],
+        business: [],
+        regulatory: []
+      },
+      acceptance: {
+        functional: [],
+        performance: [],
+        usability: [],
+        security: []
+      },
+      testStrategy: {
+        approach: SPEC_KIT_CONFIG.DEFAULT_TEST_STRATEGIES,
+        coverage: SPEC_KIT_CONFIG.DEFAULT_TEST_COVERAGE,
+        priorities: [],
+        risks: SPEC_KIT_CONFIG.COMMON_TEST_RISKS
+      }
+    };
+
+    return {
+      specification: fallbackSpec,
+      confidence: 0.3,
+      warnings: ['Spec Kit 생성 실패로 기본 명세서 사용'],
+      suggestions: ['PDF 내용을 더 구체적으로 작성하여 재시도하세요.']
+    };
+  }
+}
 
 async function extractTextFromFile(filePath: string, fileType: string, projectName: string = '프로젝트'): Promise<{ text: string, imageAnalysis: string }> {
   try {
@@ -206,12 +430,267 @@ async function analyzeImageWithVision(imageBase64: string, projectName: string):
   }
 }
 
+/**
+ * Spec Kit 명세서 기반 AI 프롬프트 생성
+ */
+function createSpecKitBasedPrompt(
+  specResult: SpecKitGenerationResult,
+  projectName: string,
+  maxTestCases: number = 12
+): string {
+  const spec = specResult.specification;
+
+  // 사용자 스토리 텍스트 생성
+  const userStoriesText = spec.functionality.userStories.length > 0
+    ? spec.functionality.userStories.map(story =>
+      `- ${story.as}로서 ${story.want}을 원한다. 목적: ${story.so}`
+    ).join('\n')
+    : '명시된 사용자 스토리 없음';
+
+  // 시나리오 텍스트 생성
+  const scenariosText = [
+    ...spec.scenarios.primary,
+    ...spec.scenarios.alternative,
+    ...spec.scenarios.exception,
+    ...spec.scenarios.edge
+  ].map(scenario =>
+    `- ${scenario.title}: ${scenario.description}`
+  ).join('\n') || '명시된 시나리오 없음';
+
+  // 수용 기준 텍스트 생성
+  const acceptanceText = [
+    ...spec.acceptance.functional,
+    ...spec.acceptance.performance,
+    ...spec.acceptance.usability,
+    ...spec.acceptance.security
+  ].map(criteria => criteria.criterion).join('\n') || '명시된 수용 기준 없음';
+
+  // 제약 조건 텍스트 생성
+  const constraintsText = [
+    ...spec.constraints.functional,
+    ...spec.constraints.technical,
+    ...spec.constraints.business,
+    ...spec.constraints.regulatory
+  ].join('\n') || '명시된 제약 조건 없음';
+
+  return `당신은 QA 테스트 전문가입니다. 다음 Spec Kit 기반 명세서를 분석하여 **한국어로** 체계적이고 포괄적인 테스트케이스를 생성해주세요.
+
+**중요: 모든 출력은 반드시 한국어로 작성해주세요!**
+
+**프로젝트 정보:**
+- 프로젝트명: ${projectName}
+- 명세서 제목: ${spec.title}
+- 명세서 신뢰도: ${Math.round(specResult.confidence * 100)}%
+
+**기능 명세:**
+- 개요: ${spec.functionality.overview}
+- 목적: ${spec.functionality.purpose}
+- 범위: ${spec.functionality.scope.join(', ')}
+
+**사용자 스토리:**
+${userStoriesText}
+
+**테스트 시나리오:**
+${scenariosText}
+
+**수용 기준:**
+${acceptanceText}
+
+**제약 조건:**
+${constraintsText}
+
+**기술 요구사항:**
+- 아키텍처: ${spec.technical.architecture.join(', ')}
+- 기술 스택: ${spec.technical.technologies.join(', ')}
+
+**테스트케이스 생성 지침:**
+1. **명세서 기반 생성**: 위의 명세서 내용을 철저히 분석하여 테스트케이스 생성
+2. **사용자 스토리 반영**: 각 사용자 스토리별로 최소 1개 이상의 테스트케이스 생성
+3. **시나리오 기반**: Primary → Alternative → Exception → Edge 시나리오 순서로 커버
+4. **수용 기준 검증**: 모든 수용 기준이 테스트로 검증되도록 설계
+5. **제약 조건 고려**: 제약 조건을 위반하는 경우에 대한 테스트 포함
+
+**생성 규칙:**
+1. **최소 ${Math.max(8, Math.min(maxTestCases, 15))}개의 다양한 테스트케이스** 생성
+2. **테스트 타입 분산**:
+   - 기능 테스트 (60%): 핵심 기능 동작 검증
+   - UI/UX 테스트 (20%): 사용자 인터페이스 검증
+   - 오류 처리 테스트 (15%): 예외 상황 처리
+   - 경계값/성능 테스트 (5%): 한계 상황 검증
+
+3. **우선순위 기반 생성**:
+   - High (40%): 핵심 기능, 사용자 스토리 기반
+   - Medium (40%): 일반 기능, 대안 시나리오
+   - Low (20%): 부가 기능, 경계값 테스트
+
+4. **시나리오별 테스트케이스**:
+   - Primary 시나리오: 정상 동작 검증
+   - Alternative 시나리오: 대안 경로 검증  
+   - Exception 시나리오: 오류 상황 처리
+   - Edge 시나리오: 경계값 및 극한 상황
+
+5. **구체적이고 실행 가능한 테스트케이스**:
+   - 명확한 사전 조건
+   - 단계별 실행 방법
+   - 구체적인 예상 결과
+   - 검증 가능한 기준
+
+**출력 형식 (JSON):**
+\`\`\`json
+{
+  "thinking": "명세서 분석 결과와 테스트케이스 생성 전략 설명",
+  "testCases": [
+    {
+      "title": "테스트케이스 제목",
+      "description": "테스트 목적과 검증 내용",
+      "preconditions": "구체적인 사전 조건",
+      "steps": [
+        "1. 첫 번째 실행 단계",
+        "2. 두 번째 실행 단계",
+        "3. 세 번째 실행 단계"
+      ],
+      "expectedResult": "구체적이고 검증 가능한 예상 결과",
+      "priority": "high|medium|low",
+      "category": "functional|ui|error|boundary|performance",
+      "relatedUserStory": "관련 사용자 스토리 ID (있는 경우)",
+      "relatedScenario": "관련 시나리오 ID (있는 경우)"
+    }
+  ]
+}
+\`\`\`
+
+**중요 사항:**
+- 명세서에 명시된 내용만을 기반으로 테스트케이스 생성
+- 추측이나 가정 없이 문서화된 요구사항만 활용
+- 각 테스트케이스는 고유하고 중복되지 않도록 설계
+- 실제 사용자가 수행할 수 있는 구체적인 단계로 작성
+
+**언어 요구사항:**
+- **모든 테스트케이스는 반드시 한국어로 작성해주세요**
+- **title, description, preconditions, steps, expectedResult 모두 한국어 사용**
+- **영어 단어 사용 금지 (기술 용어 제외)**
+- **한국어 문장으로 자연스럽게 작성**
+
+**출력 예시:**
+\`\`\`json
+{
+  "title": "관리자 사이트 비밀번호 변경 성공 테스트",
+  "description": "점주가 관리자 사이트에서 비밀번호를 성공적으로 변경하는 기능을 검증합니다.",
+  "preconditions": "점주 계정으로 관리자 사이트에 로그인된 상태",
+  "steps": [
+    "1. 설정 메뉴에서 '비밀번호 변경'을 클릭합니다",
+    "2. 현재 비밀번호를 입력합니다",
+    "3. 새 비밀번호를 입력합니다"
+  ],
+  "expectedResult": "비밀번호 변경이 완료되고 성공 메시지가 표시됩니다"
+}
+\`\`\`
+
+지금 즉시 위의 명세서를 기반으로 **한국어로** 체계적인 테스트케이스를 생성해주세요.`;
+}
+
+/**
+ * 상세 명세서 기반 향상된 테스트케이스 프롬프트 생성
+ */
+function createEnhancedTestCasePrompt(detailedSpecification: string, projectName: string): string {
+  return `당신은 QA 테스트 전문가입니다. 아래의 상세한 기능 명세서를 기반으로 **한국어로** 포괄적이고 고품질의 테스트케이스를 생성해주세요.
+
+**중요: 모든 출력은 반드시 한국어로 작성해주세요!**
+
+**프로젝트명**: ${projectName}
+
+**상세 기능 명세서**:
+${detailedSpecification}
+
+**테스트케이스 생성 전략**:
+
+1. **완전성 (Completeness)**:
+   - 명세서의 모든 기능과 요구사항을 테스트로 커버
+   - 숨겨진 요구사항과 암시적 기능까지 테스트 포함
+   - 비즈니스 규칙과 제약조건 모두 검증
+
+2. **다양성 (Diversity)**:
+   - **정상 시나리오**: 기대되는 사용자 흐름
+   - **예외 시나리오**: 오류 상황과 예외 처리
+   - **경계값 테스트**: 입력값의 최소/최대 경계
+   - **부정적 테스트**: 잘못된 입력과 오용 상황
+   - **통합 테스트**: 다른 시스템/컴포넌트와의 연동
+
+3. **실용성 (Practicality)**:
+   - 실제 사용자가 수행할 수 있는 구체적 단계
+   - 명확한 입력값과 예상 결과
+   - 검증 가능한 기준과 조건
+
+4. **우선순위 (Priority)**:
+   - **High**: 핵심 비즈니스 기능, 보안 관련
+   - **Medium**: 일반적 기능, 사용성
+   - **Low**: 부가 기능, 성능 최적화
+
+**생성 목표**:
+- **최소 15-20개의 테스트케이스** 생성
+- **각 테스트케이스는 고유하고 중복되지 않음**
+- **명세서의 모든 섹션을 균형있게 커버**
+
+**출력 형식 (JSON) - 반드시 한국어로**:
+\`\`\`json
+{
+  "thinking": "명세서 분석 결과와 테스트케이스 생성 전략을 한국어로 상세히 설명",
+  "testCases": [
+    {
+      "title": "구체적이고 명확한 한국어 테스트케이스 제목",
+      "description": "테스트의 목적과 검증하고자 하는 내용을 한국어로 상세히 설명",
+      "preconditions": "테스트 실행 전 필요한 구체적인 사전 조건들",
+      "steps": [
+        "1. 첫 번째 실행 단계를 구체적으로 설명",
+        "2. 두 번째 실행 단계를 구체적으로 설명",
+        "3. 세 번째 실행 단계를 구체적으로 설명"
+      ],
+      "expectedResult": "구체적이고 검증 가능한 예상 결과",
+      "priority": "high|medium|low",
+      "category": "functional|ui|integration|boundary|negative|performance",
+      "testData": "필요한 경우 구체적인 테스트 데이터"
+    }
+  ]
+}
+\`\`\`
+
+**예시 (비밀번호 변경 기능)**:
+\`\`\`json
+{
+  "title": "관리자 사이트 비밀번호 정책 준수 검증 테스트",
+  "description": "새 비밀번호가 설정된 정책(길이, 복잡성 등)을 만족하는지 검증합니다",
+  "preconditions": "관리자 계정으로 로그인된 상태, 비밀번호 정책이 설정된 상태",
+  "steps": [
+    "1. 비밀번호 변경 페이지로 이동합니다",
+    "2. 현재 비밀번호를 입력합니다", 
+    "3. 정책을 만족하는 새 비밀번호를 입력합니다 (예: Test123!@#)",
+    "4. 비밀번호 확인란에 동일한 값을 입력합니다",
+    "5. 저장 버튼을 클릭합니다"
+  ],
+  "expectedResult": "비밀번호 변경이 성공적으로 완료되고 성공 메시지가 표시됩니다",
+  "priority": "high",
+  "category": "functional"
+}
+\`\`\`
+
+**중요 지침**:
+- 명세서에 명시된 내용만을 기반으로 테스트케이스 생성
+- 추측하지 말고 문서화된 요구사항만 활용
+- 각 테스트케이스는 독립적으로 실행 가능해야 함
+- 실제 업무 환경에서 발생할 수 있는 시나리오 우선
+
+지금 즉시 상세한 명세서를 철저히 분석하여 **한국어로** 고품질 테스트케이스를 생성해주세요.`;
+}
+
+// 기존 프롬프트 함수 (Fallback용)
 function createAIPrompt(extractedText: string, projectName: string, imageAnalysis: string = ''): string {
   const combinedContent = imageAnalysis
     ? `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}`
     : extractedText;
 
-  return `당신은 QA 테스트 전문가입니다. 다음 문서를 분석하여 테스트 케이스를 생성해주세요.
+  return `당신은 QA 테스트 전문가입니다. 다음 문서를 분석하여 **한국어로** 테스트 케이스를 생성해주세요.
+
+**중요: 모든 출력은 반드시 한국어로 작성해주세요!**
 
 **매우 중요**: 반드시 제공된 문서의 실제 내용만을 기반으로 테스트 케이스를 생성하세요.
 **경고**: 문서에 없는 일반적인 기능(로그인, 회원가입, 상품 목록 등)은 절대 포함하지 마세요.
@@ -234,26 +713,28 @@ ${combinedContent}
 10. **각 테스트 케이스는 서로 다른 관점이나 시나리오를 다뤄야 합니다**
 11. **동일한 기능이라도 다른 조건, 입력값, 상황으로 구분하세요**
 
-**JSON 형식으로 응답**:
+**JSON 형식으로 응답 (반드시 한국어로)**:
 {
-  "thinking": "문서 분석 과정과 테스트 케이스 생성 근거를 설명",
+  "thinking": "문서 분석 과정과 테스트 케이스 생성 근거를 한국어로 설명",
   "testCases": [
     {
-      "title": "테스트 케이스 제목",
-      "description": "테스트 목적과 검증 내용",
-      "preconditions": "사전 조건 (구체적으로)",
+      "title": "관리자 사이트 비밀번호 변경 성공 테스트",
+      "description": "점주가 관리자 사이트에서 비밀번호를 성공적으로 변경하는 기능을 검증합니다",
+      "preconditions": "점주 계정으로 관리자 사이트에 로그인된 상태",
       "steps": [
-        "1. 구체적인 실행 단계",
-        "2. 다음 실행 단계"
+        "1. 설정 메뉴에서 비밀번호 변경을 선택합니다",
+        "2. 현재 비밀번호를 입력합니다",
+        "3. 새 비밀번호를 입력합니다",
+        "4. 저장 버튼을 클릭합니다"
       ],
-      "expectedResult": "기대 결과 (구체적으로)",
-      "priority": "high|medium|low",
-      "category": "functional|ui|integration|performance"
+      "expectedResult": "비밀번호 변경이 완료되고 성공 메시지가 표시됩니다",
+      "priority": "high",
+      "category": "functional"
     }
   ]
 }
 
-문서 내용을 정확히 반영한 테스트 케이스를 생성해주세요.`;
+**다시 한번 강조: 모든 필드를 한국어로 작성하고, 문서 내용을 정확히 반영한 테스트 케이스를 생성해주세요.**`;
 }
 
 async function callOllama(prompt: string, projectName: string): Promise<any> {
@@ -409,14 +890,41 @@ export async function POST(request: NextRequest) {
     console.log('- 이미지 분석 길이:', imageAnalysis.length);
     console.log('- 텍스트 미리보기:', extractedText.substring(0, 200));
 
-    // 3. AI 프롬프트 생성 및 호출
-    console.log('AI 프롬프트 생성 중...');
-    const aiPrompt = createAIPrompt(extractedText, projectName, imageAnalysis);
+    // 3. Spec Kit 명세서 생성
+    console.log('🔄 Spec Kit 하이브리드 방식 시작...');
+    let aiResult;
+    let testCases = [];
+    let specKitUsed = false;
 
-    console.log('AI 결과 생성 중...');
-    const aiResult = await callOllama(aiPrompt, projectName);
-    const testCases = aiResult?.testCases || [];
-    console.log('생성된 테스트 케이스 수:', testCases.length);
+    try {
+      // 🔍 1단계: AI 명세화 전문가로 상세 명세서 생성
+      const detailedSpec = await createDetailedSpecificationWithAI(extractedText, imageAnalysis, projectName);
+
+      // 🤖 2단계: 상세 명세서 기반 테스트케이스 생성
+      console.log('🤖 상세 명세서 기반 AI 테스트케이스 생성 중...');
+      const enhancedPrompt = createEnhancedTestCasePrompt(detailedSpec, projectName);
+
+      aiResult = await callOllama(enhancedPrompt, projectName);
+      testCases = aiResult?.testCases || [];
+      specKitUsed = true;
+
+      console.log('✅ 2단계 AI 방식 성공!');
+      console.log('- 명세서 길이:', detailedSpec.length);
+      console.log('- 생성된 테스트케이스 수:', testCases.length);
+
+    } catch (specKitError) {
+      console.error('❌ Spec Kit 하이브리드 방식 실패:', specKitError);
+      console.log('🔄 기존 방식으로 fallback...');
+
+      // Fallback: 기존 방식 사용
+      const aiPrompt = createAIPrompt(extractedText, projectName, imageAnalysis);
+      aiResult = await callOllama(aiPrompt, projectName);
+      testCases = aiResult?.testCases || [];
+      specKitUsed = false;
+
+      console.log('✅ 기존 방식 Fallback 완료');
+      console.log('- 생성된 테스트케이스 수:', testCases.length);
+    }
 
     // 임시 파일 정리
     try {
@@ -501,13 +1009,19 @@ export async function POST(request: NextRequest) {
     console.log(`총 ${savedCases.length}개 테스트 케이스 저장 완료`);
 
     // 4. 성공 응답 (프론트엔드가 기대하는 형식으로)
+    const responseMessage = specKitUsed
+      ? `🚀 2단계 AI 명세화 방식으로 ${savedCases.length}개의 고품질 테스트케이스가 생성되었습니다!`
+      : `${savedCases.length}개의 테스트 케이스가 생성되었습니다.`;
+
     return NextResponse.json({
       success: true,
-      message: `${savedCases.length}개의 테스트 케이스가 생성되었습니다.`,
+      message: responseMessage,
       generatedCount: savedCases.length, // 프론트엔드에서 사용하는 필드
+      specKitUsed: specKitUsed, // Spec Kit 사용 여부
       data: {
         testCases: savedCases,
-        projectName: projectName
+        projectName: projectName,
+        method: specKitUsed ? 'spec-kit-hybrid' : 'traditional'
       }
     });
 
