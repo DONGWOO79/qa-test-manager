@@ -11,12 +11,12 @@ interface AIGenerationModalProps {
   onGenerationComplete: () => void;
 }
 
-export default function AIGenerationModal({ 
-  isOpen, 
-  onClose, 
-  projectId, 
+export default function AIGenerationModal({
+  isOpen,
+  onClose,
+  projectId,
   projectName,
-  onGenerationComplete 
+  onGenerationComplete
 }: AIGenerationModalProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -28,7 +28,7 @@ export default function AIGenerationModal({
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const supportedFormats = [
-    '.pdf', '.docx', '.doc', '.pptx', '.ppt', 
+    '.pdf', '.docx', '.doc', '.pptx', '.ppt',
     '.xlsx', '.xls', '.csv', '.txt'
   ];
 
@@ -86,7 +86,7 @@ export default function AIGenerationModal({
       formData.append('file', uploadedFile);
       formData.append('projectId', projectId);
       formData.append('projectName', projectName);
-      
+
       // 이미지 파일들 추가
       imageFiles.forEach((imageFile) => {
         formData.append('images', imageFile);
@@ -102,7 +102,7 @@ export default function AIGenerationModal({
       }
 
       const result = await response.json();
-      
+
       if (result.success) {
         onGenerationComplete();
         onClose();
@@ -171,18 +171,17 @@ export default function AIGenerationModal({
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               기획서 업로드
             </h3>
-            
+
             <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center ${
-                uploadedFile 
-                  ? 'border-green-300 bg-green-50' 
+              className={`border-2 border-dashed rounded-lg p-8 text-center ${uploadedFile
+                  ? 'border-green-300 bg-green-50'
                   : 'border-gray-300 hover:border-blue-400'
-              }`}
+                }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
             >
               <DocumentArrowUpIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              
+
               {uploadedFile ? (
                 <div>
                   <p className="text-green-700 font-medium mb-2">
@@ -209,7 +208,7 @@ export default function AIGenerationModal({
                   </button>
                 </div>
               )}
-              
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -219,11 +218,22 @@ export default function AIGenerationModal({
               />
             </div>
 
-                               {/* Supported Formats */}
-                   <div className="mt-3 text-sm text-gray-500">
-                     <p>지원 형식: {supportedFormats.join(', ')}</p>
-                     <p>파일 크기 제한: 최대 5MB</p>
-                   </div>
+            {/* Supported Formats */}
+            <div className="mt-3 text-sm text-gray-500">
+              <p>지원 형식: {supportedFormats.join(', ')}</p>
+              <p>파일 크기 제한: 최대 5MB</p>
+            </div>
+
+            {/* PDF 이미지 처리 안내 */}
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <SparklesIcon className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-blue-800">
+                  <p className="font-medium mb-1">💡 이미지 PDF도 처리 가능!</p>
+                  <p>스캔된 PDF나 이미지로만 구성된 PDF도 자동으로 Vision AI가 분석하여 테스트케이스를 생성합니다.</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Image Upload Section */}
@@ -235,7 +245,7 @@ export default function AIGenerationModal({
             <p className="text-sm text-gray-600 mb-4">
               플로우차트, 시스템 구조도, UI 목업 등의 이미지를 추가하면 더 정확한 테스트케이스를 생성할 수 있습니다.
             </p>
-            
+
             <div className="border border-gray-200 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium text-gray-700">
@@ -249,7 +259,7 @@ export default function AIGenerationModal({
                   <span>이미지 추가</span>
                 </button>
               </div>
-              
+
               <input
                 ref={imageInputRef}
                 type="file"
@@ -258,7 +268,7 @@ export default function AIGenerationModal({
                 multiple
                 className="hidden"
               />
-              
+
               {/* Image Preview */}
               {imageFiles.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -285,13 +295,13 @@ export default function AIGenerationModal({
                   ))}
                 </div>
               )}
-              
+
               {imageFiles.length === 0 && (
                 <div className="text-center py-6 text-gray-500 text-sm">
                   아직 이미지가 업로드되지 않았습니다.
                 </div>
               )}
-              
+
               <div className="mt-3 text-xs text-gray-500">
                 <p>지원 형식: {supportedImageFormats.join(', ')}</p>
                 <p>여러 이미지를 동시에 선택할 수 있습니다.</p>
@@ -316,7 +326,7 @@ export default function AIGenerationModal({
                 <span className="text-sm text-gray-500">{progress}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
+                <div
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 ></div>
