@@ -58,8 +58,8 @@ async function extractImagesFromPDF(pdfPath, outputDir = './temp/pdf-images-v2')
                 // 페이지 로드
                 const page = await pdfDocument.getPage(pageNum);
 
-                // 페이지 크기 정보
-                const viewport = page.getViewport({ scale: 2.0 }); // 2배 해상도
+                // 페이지 크기 정보 (Google Vision API용 최적화된 해상도)
+                const viewport = page.getViewport({ scale: 2.5 }); // 2.5배 해상도로 최적화
 
                 // Canvas 생성
                 const canvas = createCanvas(viewport.width, viewport.height);
@@ -73,11 +73,11 @@ async function extractImagesFromPDF(pdfPath, outputDir = './temp/pdf-images-v2')
 
                 await page.render(renderContext).promise;
 
-                // 이미지 파일로 저장
-                const fileName = `page-${pageNum.toString().padStart(2, '0')}.png`;
+                // 이미지 파일로 저장 (JPEG로 압축하여 용량 최적화)
+                const fileName = `page-${pageNum.toString().padStart(2, '0')}.jpg`;
                 const filePath = path.join(outputDir, fileName);
 
-                const buffer = canvas.toBuffer('image/png');
+                const buffer = canvas.toBuffer('image/jpeg', { quality: 0.9 }); // 90% 품질
                 fs.writeFileSync(filePath, buffer);
 
                 imageFiles.push(filePath);
