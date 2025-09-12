@@ -19,6 +19,50 @@ import { SPEC_KIT_CONFIG } from '@/lib/spec-kit/spec-kit-config';
 
 const dbPath = path.join(process.cwd(), 'database.db');
 
+// 진행률 추적 시스템
+interface ProgressStep {
+  step: string;
+  progress: number;
+  message: string;
+  timestamp: string;
+  duration?: number;
+}
+
+class ProgressTracker {
+  private steps: ProgressStep[] = [];
+  private startTime: number = Date.now();
+
+  logStep(step: string, progress: number, message: string) {
+    const now = Date.now();
+    const duration = this.steps.length > 0 ? now - Date.parse(this.steps[this.steps.length - 1].timestamp) : 0;
+
+    this.steps.push({
+      step,
+      progress,
+      message,
+      timestamp: new Date().toISOString(),
+      duration
+    });
+
+    console.log(`📊 [${progress}%] ${step}: ${message}`);
+    if (duration > 0) {
+      console.log(`⏱️ 이전 단계 소요시간: ${Math.round(duration / 1000)}초`);
+    }
+  }
+
+  getProgress() {
+    return this.steps;
+  }
+
+  getTotalDuration() {
+    return Date.now() - this.startTime;
+  }
+
+  getCurrentStep() {
+    return this.steps.length > 0 ? this.steps[this.steps.length - 1] : null;
+  }
+}
+
 /**
  * AI 기반 명세화 전문가 - PDF 내용을 상세 명세서로 변환
  */
@@ -43,60 +87,56 @@ async function createDetailedSpecificationWithAI(
 
   console.log(`- 최종 결합된 내용 길이: ${combinedText.length}자`);
 
-  const specificationPrompt = `당신은 요구사항 분석 및 명세화 전문가입니다.
-다음 문서를 분석하여 완전하고 상세한 기능 명세서를 작성해주세요.
+  const specificationPrompt = `당신은 첨부 문서 분석 전문가입니다.
+다음은 PDF 파일에서 추출한 실제 내용입니다. 이 내용을 바탕으로 **문서에서 설명하는 실제 기능**에 대한 명세서를 작성해주세요.
 
-**원본 문서**:
+**첨부 문서에서 추출된 실제 내용**:
 ${combinedText}
 
-**명세화 지침**:
-1. **숨겨진 요구사항 발굴**: 문서에서 암시되거나 생략된 기능들을 추론하여 명시
-2. **비즈니스 규칙 추출**: 업무 규칙과 제약 조건을 구체적으로 정의
-3. **예외 상황 식별**: 오류, 실패, 경계 조건 등 모든 예외 상황 분석
-4. **사용자 여정 완성**: 전체적인 사용자 경험 흐름을 단계별로 상세화
-5. **데이터 흐름 분석**: 입력, 처리, 출력 과정의 모든 데이터 변환 과정
-6. **인터페이스 정의**: UI/UX 요소와 시스템 간 상호작용 명세
+**핵심 원칙**:
+✅ **문서에 명시된 내용만 사용**: 문서에서 실제로 언급된 기능, 요구사항, 절차만 포함
+✅ **문서의 실제 맥락 반영**: 문서가 설명하는 범위와 목적에 맞는 명세서 작성
+✅ **추측 최소화**: 문서에 없는 내용은 "문서에서 명시되지 않음"으로 표시
+
+**주의사항**:
+⚠️ 문서에 명시되지 않은 기능을 임의로 추가하지 마세요
+⚠️ 일반적인 소프트웨어 관례보다 문서의 실제 내용을 우선하세요
+⚠️ 문서가 단순한 경우, 명세서도 그에 맞게 단순하게 작성하세요
 
 **출력 형식**:
-## 1. 기능 개요
-[전체 기능에 대한 명확한 설명]
+## 1. 문서 개요
+**문서 제목**: [첨부 문서에서 확인된 실제 제목]
+**기능 목적**: [문서에서 설명하는 실제 기능의 목적]
+**문서 정보**: [버전, 날짜, 담당자 등 문서에 명시된 메타데이터]
 
-## 2. 상세 요구사항
-### 2.1 기본 기능
-- [구체적인 기능 나열]
+## 2. 문서에서 확인된 요구사항
+### 2.1 명시된 기능
+- [문서에서 직접 언급된 기능들만 나열]
 
-### 2.2 비즈니스 규칙
-- [업무 규칙과 제약조건]
+### 2.2 변경사항 및 버전 정보
+- [문서에 포함된 변경 내역, 히스토리 정보]
 
-### 2.3 예외 처리
-- [오류 상황과 처리 방법]
+### 2.3 관련 정보
+- [문서에 명시된 담당자, 날짜, 기타 메타데이터]
 
-## 3. 사용자 시나리오
-### 3.1 정상 시나리오
-[단계별 상세 흐름]
+## 3. 문서 기반 사용자 시나리오
+### 3.1 문서에서 추론되는 주요 흐름
+[첨부 문서 내용으로부터만 추론되는 사용자 흐름]
 
-### 3.2 예외 시나리오  
-[오류 상황별 흐름]
+## 4. 테스트 대상 기능
+### 4.1 문서에서 확인된 테스트 포인트
+[첨부 문서에서 테스트해야 할 구체적인 기능들]
 
-### 3.3 경계값 시나리오
-[한계 상황 처리]
+**절대 금지사항**: 
+- 첨부 문서에 없는 일반적인 기능(로그인, 인증, 암호화 등) 추가 금지
+- 추상적이거나 가상의 시나리오 생성 금지
+- 문서와 관련 없는 기술적 세부사항 추가 금지
+- 일반적인 소프트웨어 기능으로 확장하지 말고 문서 내용에만 집중
 
-## 4. 데이터 명세
-### 4.1 입력 데이터
-[입력값, 형식, 제약조건]
-
-### 4.2 출력 데이터
-[결과값, 형식, 조건]
-
-## 5. 인터페이스 명세
-### 5.1 사용자 인터페이스
-[화면 구성, 입력 요소, 버튼 등]
-
-### 5.2 시스템 인터페이스
-[API, 데이터베이스, 외부 연동]
-
-**중요**: 원본 문서의 내용을 기반으로 하되, 실제 시스템 구현에 필요한 모든 세부사항을 추론하여 포함시켜주세요.
-테스트 케이스 작성에 필요한 모든 정보가 포함되도록 상세하게 작성해주세요.`;
+**반드시 포함해야 할 내용**:
+- 문서에서 추출된 실제 텍스트와 정보 그대로 활용
+- 문서에 명시된 구체적인 버전, 날짜, 담당자 정보
+- 문서의 실제 목적과 범위에 맞는 기능 명세만 작성`;
 
   try {
     const response = await fetch('http://localhost:11434/api/generate', {
@@ -246,7 +286,7 @@ async function generateSpecKitSpecification(
   }
 }
 
-async function extractTextFromFile(filePath: string, fileType: string, projectName: string = '프로젝트'): Promise<{ text: string, imageAnalysis: string }> {
+async function extractTextFromFile(filePath: string, fileType: string, projectName: string = '프로젝트', fileName: string = ''): Promise<{ text: string, imageAnalysis: string }> {
   try {
     const fileContent = await fs.promises.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -301,19 +341,20 @@ async function extractTextFromFile(filePath: string, fileType: string, projectNa
           if (text.length === 0) {
             console.log('⚠️ PDF 텍스트 추출 불가 - 이미지 PDF로 판단됨');
             console.log('🔄 PDF를 이미지로 변환하여 Vision AI 분석 시도...');
+            console.log('📊 [15%] PDF_IMAGE: PDF 이미지 변환 시작 - MuPDF 피그마 PDF 최적화');
 
             try {
-              // PDF를 이미지로 변환 (임시 파일 사용)
+              // MuPDF mutool로 PDF를 이미지로 변환 (피그마 PDF 벡터/투명도 처리)
               const path = eval('require')('path');
               const fs = eval('require')('fs');
-              const pdfImageExtractor = eval('require')(path.join(process.cwd(), 'src', 'lib', 'pdf-image-extractor-v2.js'));
+              const pdfImageExtractor = eval('require')(path.join(process.cwd(), 'src', 'lib', 'pdf-image-extractor-mupdf.js'));
 
               // 임시 PDF 파일 생성
               const tempPdfPath = path.join('/tmp', `temp_pdf_${Date.now()}.pdf`);
               await fs.promises.writeFile(tempPdfPath, fileContent);
 
-              const imagePaths = await pdfImageExtractor.extractImagesFromPDF(tempPdfPath);
-              console.log(`PDF에서 ${imagePaths.length}개 이미지 추출 완료`);
+              const imagePaths = await pdfImageExtractor.extractImagesFromPDF(tempPdfPath, 300);
+              console.log(`📊 [25%] PDF_IMAGE_COMPLETE: PDF에서 ${imagePaths.length}개 이미지 추출 완료 - Vision AI 분석 시작`);
 
               // 이미지 파일들을 Base64로 변환
               const images = [];
@@ -335,7 +376,18 @@ async function extractTextFromFile(filePath: string, fileType: string, projectNa
               }
 
               if (images.length === 0) {
-                console.log('⚠️ PDF에서 이미지 추출 실패');
+                console.log('⚠️ PDF에서 이미지 추출 완전 실패 - PDF.js 호환성 문제');
+                console.log('📝 텍스트 기반 분석으로 전환 (pdf-parse 결과 사용)');
+
+                // 텍스트가 있다면 텍스트만으로 진행
+                if (text && text.length > 0) {
+                  return {
+                    text: text,
+                    imageAnalysis: 'PDF 이미지 추출 실패로 텍스트만 사용됨'
+                  };
+                }
+
+                // 텍스트도 이미지도 없으면 실패
                 return {
                   text: '텍스트와 이미지 추출 모두 실패',
                   imageAnalysis: ''
@@ -365,7 +417,7 @@ async function extractTextFromFile(filePath: string, fileType: string, projectNa
                     throw new Error('Google Vision API에서 텍스트를 추출하지 못함');
                   }
                 } catch (googleError) {
-                  console.log(`⚠️ Google Vision API 실패 (페이지 ${i + 1}):`, googleError.message);
+                  console.log(`⚠️ Google Vision API 실패 (페이지 ${i + 1}):`, (googleError as Error).message);
 
                   // 2차 시도: Ollama Vision AI (fallback) - 비활성화 (Google Vision API 전용)
                   console.log(`⚠️ Ollama Vision AI 대체 로직 비활성화됨 - Google Vision API 전용 모드`);
@@ -380,26 +432,47 @@ async function extractTextFromFile(filePath: string, fileType: string, projectNa
                 }
               }
 
-              // 추출된 이미지 파일들 정리 (디버깅을 위해 임시로 보존)
-              console.log('📁 추출된 이미지 파일들 (디버깅용):');
+              // 추출된 이미지 파일들 자동 정리
+              console.log('🧹 추출된 이미지 파일들 자동 정리 중...');
+              let cleanedFiles = 0;
               for (const imagePath of imagePaths) {
                 try {
-                  const stats = await fs.promises.stat(imagePath);
-                  console.log(`  - ${imagePath} (${Math.round(stats.size / 1024)}KB)`);
-                  // 임시로 삭제하지 않음 - 디버깅 후 복원 필요
-                  // await fs.promises.unlink(imagePath);
+                  await fs.promises.unlink(imagePath);
+                  cleanedFiles++;
                 } catch (cleanupError) {
-                  console.log('이미지 파일 정보 확인 실패:', imagePath);
+                  console.log('이미지 파일 삭제 실패:', imagePath);
                 }
               }
 
+              // 빈 디렉토리도 정리
+              try {
+                const imageDir = path.dirname(imagePaths[0]);
+                const remainingFiles = await fs.promises.readdir(imageDir);
+                if (remainingFiles.length === 0) {
+                  await fs.promises.rmdir(imageDir);
+                  console.log(`✅ 임시 디렉토리 정리 완료: ${cleanedFiles}개 파일, 1개 디렉토리 삭제`);
+                } else {
+                  console.log(`✅ 임시 파일 정리 완료: ${cleanedFiles}개 파일 삭제`);
+                }
+              } catch (dirCleanupError) {
+                console.log(`✅ 임시 파일 정리 완료: ${cleanedFiles}개 파일 삭제`);
+              }
+
               const combinedAnalysis = imageAnalysisResults.join('\n\n');
-              console.log('Vision AI 분석 완료, 총 길이:', combinedAnalysis.length);
+              const successfulAnalyses = imageAnalysisResults.filter(result => result && result.trim().length > 0).length;
+
+              console.log(`\n📊 Vision AI 분석 완료:`);
+              console.log(`   ✅ 성공: ${successfulAnalyses}/${maxPages}페이지`);
+              console.log(`   📝 총 분석 길이: ${combinedAnalysis.length}자`);
+
+              if (successfulAnalyses > 0 && successfulAnalyses < maxPages) {
+                console.log(`   ⚠️ 부분적 성공 - ${successfulAnalyses}개 페이지 분석 결과로 진행`);
+              }
 
               // Vision AI 분석이 실패했을 경우 파일명과 프로젝트명 기반 스마트 fallback
               if (combinedAnalysis.length === 0) {
                 // 파일명에서 키워드 추출
-                const fileName = formData.get('fileName') as string || '';
+                // fileName은 함수 파라미터에서 받음
                 const fileKeywords = fileName.toLowerCase();
 
                 let specificFeatures = [];
@@ -480,7 +553,7 @@ ${specificFeatures.map((feature, index) => `${index + 1}. ${feature}`).join('\n'
         } catch (error) {
           console.error('PDF 파싱 실패:', error);
           return {
-            text: `PDF 파싱 실패: ${error.message}`,
+            text: `PDF 파싱 실패: ${(error as Error).message}`,
             imageAnalysis: ''
           };
         }
@@ -488,7 +561,7 @@ ${specificFeatures.map((feature, index) => `${index + 1}. ${feature}`).join('\n'
         return { text: fileContent.toString('utf-8'), imageAnalysis: '' };
     }
   } catch (error) {
-    return { text: `파일 처리 실패: ${error.message}`, imageAnalysis: '' };
+    return { text: `파일 처리 실패: ${(error as Error).message}`, imageAnalysis: '' };
   }
 }
 
@@ -514,6 +587,9 @@ async function analyzeImageWithGoogleVision(imageBase64: string): Promise<string
         { type: 'TEXT_DETECTION' as const, maxResults: 100 },
         { type: 'DOCUMENT_TEXT_DETECTION' as const, maxResults: 1 },
       ],
+      imageContext: {
+        languageHints: ['ko', 'en'], // 한국어, 영어 힌트 추가
+      },
     };
 
     // Google Vision API 호출
@@ -530,21 +606,24 @@ async function analyzeImageWithGoogleVision(imageBase64: string): Promise<string
       console.log('- fullTextAnnotation.text 길이:', result.fullTextAnnotation.text?.length || 0);
     }
 
-    // 전체 텍스트 추출
-    const fullTextAnnotation = result.fullTextAnnotation;
-    if (fullTextAnnotation && fullTextAnnotation.text) {
-      console.log('✅ Google Vision 전체 텍스트 추출 성공, 길이:', fullTextAnnotation.text.length);
-      console.log('✅ Google Vision 텍스트 미리보기:', fullTextAnnotation.text.substring(0, 300));
-      return fullTextAnnotation.text;
-    }
-
-    // 개별 텍스트 추출 (fallback)
+    // 1차: TEXT_DETECTION 결과 (개별 텍스트 주석) - 피그마 PDF에 더 효과적
     const textAnnotations = result.textAnnotations;
     if (textAnnotations && textAnnotations.length > 0) {
-      const extractedText = textAnnotations.map(annotation => annotation.description).join(' ');
-      console.log('✅ Google Vision 개별 텍스트 추출 성공, 길이:', extractedText.length);
-      console.log('✅ Google Vision 개별 텍스트 미리보기:', extractedText.substring(0, 300));
-      return extractedText;
+      // 첫 번째 annotation은 전체 텍스트, 나머지는 개별 단어/구문
+      const extractedText = textAnnotations[0]?.description || '';
+      if (extractedText && extractedText.trim().length > 0) {
+        console.log('✅ Google Vision TEXT_DETECTION 성공, 길이:', extractedText.length);
+        console.log('✅ TEXT_DETECTION 텍스트 미리보기:', extractedText.substring(0, 300));
+        return extractedText;
+      }
+    }
+
+    // 2차: DOCUMENT_TEXT_DETECTION 결과 (전체 문서 구조) - 일반 PDF용
+    const fullTextAnnotation = result.fullTextAnnotation;
+    if (fullTextAnnotation && fullTextAnnotation.text) {
+      console.log('✅ Google Vision DOCUMENT_TEXT_DETECTION 성공, 길이:', fullTextAnnotation.text.length);
+      console.log('✅ DOCUMENT_TEXT_DETECTION 텍스트 미리보기:', fullTextAnnotation.text.substring(0, 300));
+      return fullTextAnnotation.text;
     }
 
     console.log('❌ Google Vision에서 텍스트를 전혀 감지하지 못함');
@@ -889,8 +968,19 @@ function createAIPrompt(extractedText: string, imageAnalysis: string = ''): stri
 
 **중요: 모든 출력은 반드시 한국어로 작성해주세요!**
 
-**매우 중요**: 반드시 제공된 문서의 실제 내용만을 기반으로 테스트 케이스를 생성하세요.
-**경고**: 문서에 없는 일반적인 기능(로그인, 회원가입, 상품 목록 등)은 절대 포함하지 마세요.
+**테스트 케이스 생성 원칙**:
+✅ **문서 기반 테스트**: 문서에서 언급된 기능, 요구사항, 절차에 대한 테스트만 생성
+✅ **실제 명시된 내용**: 문서에서 구체적으로 설명된 동작, 화면, 데이터에 대한 검증
+✅ **문서 범위 준수**: 문서가 다루는 범위 내에서만 테스트 케이스 생성
+
+**예시**:
+- 문서에 "동의 버튼"이 언급되면 → 동의 버튼 테스트 포함 ✅
+- 문서에 "데이터 저장"이 언급되면 → 데이터 저장 테스트 포함 ✅
+- 문서에 언급이 없으면 → 해당 기능 테스트 제외 ❌
+
+**주의사항**:
+⚠️ 문서에 없는 기능은 추측하여 추가하지 마세요
+⚠️ 문서가 단순하면 테스트도 단순하게 생성하세요
 
 **문서 내용**:
 ${combinedContent}
@@ -984,7 +1074,7 @@ async function callOllama(prompt: string): Promise<any> {
           console.log('✅ JSON 파싱 성공 (1차)');
           return parsedData;
         } catch (firstError) {
-          console.log('❌ 1차 JSON 파싱 실패:', firstError.message);
+          console.log('❌ 1차 JSON 파싱 실패:', (firstError as Error).message);
 
           // 2차 시도: testCases 배열만 추출
           const testCasesMatch = data.response.match(/"testCases"\s*:\s*\[([\s\S]*?)\]/);
@@ -996,7 +1086,7 @@ async function callOllama(prompt: string): Promise<any> {
               console.log('✅ testCases 배열 파싱 성공 (2차)');
               return { testCases: testCasesArray };
             } catch (secondError) {
-              console.log('❌ 2차 JSON 파싱도 실패:', secondError.message);
+              console.log('❌ 2차 JSON 파싱도 실패:', (secondError as Error).message);
             }
           }
 
@@ -1011,7 +1101,7 @@ async function callOllama(prompt: string): Promise<any> {
                 const caseData = JSON.parse(caseMatches[i]);
                 individualCases.push(caseData);
               } catch (caseError) {
-                console.log(`케이스 ${i + 1} 파싱 실패:`, caseError.message);
+                console.log(`케이스 ${i + 1} 파싱 실패:`, (caseError as Error).message);
               }
             }
             if (individualCases.length > 0) {
@@ -1026,7 +1116,7 @@ async function callOllama(prompt: string): Promise<any> {
       return createTestCasesFromThinking(data.response);
 
     } catch (parseError) {
-      console.log('❌ JSON 파싱 전체 실패, thinking 필드에서 추출 시도:', parseError.message);
+      console.log('❌ JSON 파싱 전체 실패, thinking 필드에서 추출 시도:', (parseError as Error).message);
       return createTestCasesFromThinking(data.response);
     }
 
@@ -1088,8 +1178,11 @@ function createTestCasesFromThinking(thinkingContent: string): any {
 }
 
 export async function POST(request: NextRequest) {
+  const progressTracker = new ProgressTracker();
+
   try {
     console.log('=== API 호출 시작 ===');
+    progressTracker.logStep('INIT', 0, 'API 호출 시작 - 파라미터 파싱 중');
 
     // 1. 폼 데이터 파싱
     const formData = await request.formData();
@@ -1108,23 +1201,21 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. 파일에서 텍스트 추출
-    console.log('파일 텍스트 추출 시작');
+    progressTracker.logStep('EXTRACT', 5, '파일 텍스트 추출 시작');
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const tempFilePath = path.join('/tmp', `upload_${Date.now()}_${file.name}`);
     await writeFile(tempFilePath, buffer);
 
-    const extractResult = await extractTextFromFile(tempFilePath, file.type, projectName);
+    const extractResult = await extractTextFromFile(tempFilePath, file.type, projectName, file.name);
     const extractedText = extractResult.text;
     const imageAnalysis = extractResult.imageAnalysis;
 
-    console.log('텍스트 추출 완료:');
-    console.log('- 추출된 텍스트 길이:', extractedText.length);
-    console.log('- 이미지 분석 길이:', imageAnalysis.length);
+    progressTracker.logStep('EXTRACT_COMPLETE', 35, `텍스트 추출 완료 - 텍스트: ${extractedText.length}자, 이미지 분석: ${imageAnalysis.length}자`);
     console.log('- 텍스트 미리보기:', extractedText.substring(0, 200));
 
     // 3. Spec Kit 명세서 생성
-    console.log('🔄 Spec Kit 하이브리드 방식 시작...');
+    progressTracker.logStep('AI_SPEC', 40, 'AI 명세화 전문가 시작 - 상세 명세서 생성 중');
     let aiResult;
     let testCases = [];
     let specKitUsed = false;
@@ -1134,7 +1225,7 @@ export async function POST(request: NextRequest) {
       const detailedSpec = await createDetailedSpecificationWithAI(extractedText, imageAnalysis);
 
       // 🤖 2단계: 상세 명세서 기반 테스트케이스 생성
-      console.log('🤖 상세 명세서 기반 AI 테스트케이스 생성 중...');
+      progressTracker.logStep('AI_TESTCASE', 65, '2단계 AI 테스트케이스 생성 중 - 명세서 기반 처리');
       console.log('📄 2단계 입력 데이터:');
       console.log(`- 명세서 길이: ${detailedSpec.length}자`);
       console.log(`- 명세서 미리보기 (처음 800자):`);
@@ -1147,9 +1238,8 @@ export async function POST(request: NextRequest) {
       testCases = aiResult?.testCases || [];
       specKitUsed = true;
 
-      console.log('✅ 2단계 AI 방식 성공!');
+      progressTracker.logStep('AI_COMPLETE', 85, `AI 처리 완료 - ${testCases.length}개 테스트케이스 생성됨`);
       console.log('- 명세서 길이:', detailedSpec.length);
-      console.log('- 생성된 테스트케이스 수:', testCases.length);
 
     } catch (specKitError) {
       console.error('❌ Spec Kit 하이브리드 방식 실패:', specKitError);
@@ -1170,11 +1260,11 @@ export async function POST(request: NextRequest) {
       await fs.promises.unlink(tempFilePath);
       console.log('임시 파일 삭제 완료');
     } catch (unlinkError) {
-      console.log('임시 파일 삭제 실패 (무시):', unlinkError.message);
+      console.log('임시 파일 삭제 실패 (무시):', (unlinkError as Error).message);
     }
 
     // 3. 데이터베이스에 저장
-    console.log('데이터베이스 저장 시작...');
+    progressTracker.logStep('DATABASE', 90, '데이터베이스 저장 시작');
     const db = new Database(dbPath);
 
     // 테이블 존재 확인
@@ -1245,18 +1335,45 @@ export async function POST(request: NextRequest) {
     }
 
     db.close();
-    console.log(`총 ${savedCases.length}개 테스트 케이스 저장 완료`);
+    progressTracker.logStep('COMPLETE', 100, `처리 완료 - ${savedCases.length}개 테스트케이스 저장됨`);
+
+    // 성능 메트릭 출력
+    const totalDuration = progressTracker.getTotalDuration();
+    const minutes = Math.floor(totalDuration / 60000);
+    const seconds = Math.floor((totalDuration % 60000) / 1000);
+
+    console.log('📊 === 처리 완료 성능 메트릭 ===');
+    console.log(`⏱️ 총 처리시간: ${minutes}분 ${seconds}초`);
+    console.log(`📋 생성된 테스트케이스: ${savedCases.length}개`);
+    console.log(`🔄 사용된 방식: ${specKitUsed ? '2단계 AI 방식' : '기존 방식'}`);
+    console.log('📈 단계별 소요시간:');
+
+    const progressSteps = progressTracker.getProgress();
+    for (let i = 0; i < progressSteps.length; i++) {
+      const step = progressSteps[i];
+      if (step.duration && step.duration > 0) {
+        console.log(`  - ${step.step}: ${Math.round(step.duration / 1000)}초`);
+      }
+    }
 
     // 4. 성공 응답 (프론트엔드가 기대하는 형식으로)
     const responseMessage = specKitUsed
-      ? `🚀 2단계 AI 명세화 방식으로 ${savedCases.length}개의 고품질 테스트케이스가 생성되었습니다!`
-      : `${savedCases.length}개의 테스트 케이스가 생성되었습니다.`;
+      ? `🚀 2단계 AI 명세화 방식으로 ${savedCases.length}개의 고품질 테스트케이스가 생성되었습니다! (${minutes}분 ${seconds}초 소요)`
+      : `${savedCases.length}개의 테스트 케이스가 생성되었습니다. (${minutes}분 ${seconds}초 소요)`;
 
     return NextResponse.json({
       success: true,
       message: responseMessage,
       generatedCount: savedCases.length, // 프론트엔드에서 사용하는 필드
       specKitUsed: specKitUsed, // Spec Kit 사용 여부
+      performance: {
+        totalDuration: totalDuration,
+        totalMinutes: minutes,
+        totalSeconds: seconds,
+        steps: progressSteps.length,
+        generatedCases: savedCases.length,
+        progressSteps: progressSteps
+      },
       data: {
         testCases: savedCases,
         projectName: projectName,
@@ -1270,7 +1387,7 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: '테스트 케이스 생성 중 오류가 발생했습니다.',
-        details: error.message
+        details: (error as Error).message
       },
       { status: 500 }
     );
