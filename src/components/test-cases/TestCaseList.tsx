@@ -11,10 +11,14 @@ interface TestCase {
   id: number;
   title: string;
   description: string;
+  test_strategy?: string;
   category: string;
+  category_name?: string;
   priority: string;
   status: string;
   created_at: string;
+  page_numbers?: string;
+  expected_result?: string;
 }
 
 interface TestCaseListProps {
@@ -41,7 +45,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   });
 
   // Column widths (percentage-based for responsive design)
-  const [columnWidths, setColumnWidths] = useState<number[]>([4, 10, 10, 20, 20, 8, 8, 12, 6]);
+  const [columnWidths, setColumnWidths] = useState<number[]>([4, 12, 4, 18, 18, 18, 7, 7, 8, 6]);
   const [isResizing, setIsResizing] = useState<number | null>(null);
   const [startX, setStartX] = useState<number>(0);
   const [startWidth, setStartWidth] = useState<number>(0);
@@ -356,10 +360,31 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
     return '';
   };
 
+  // Extract pure description (첫 번째 부분만, 사전조건/확인방법/기대결과 제외)
+  const getPureDescription = (description: string) => {
+    if (!description) return '';
+
+    // "사전 조건:", "확인 방법:", "기대 결과:" 이전까지만 추출
+    const lines = description.split('\n');
+    const pureLines = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('사전 조건:') ||
+        trimmedLine.startsWith('확인 방법:') ||
+        trimmedLine.startsWith('기대 결과:')) {
+        break;
+      }
+      pureLines.push(line);
+    }
+
+    return pureLines.join('\n').trim();
+  };
+
   // Resize handlers for pre-condition and test step columns only
   const handleResizeStart = useCallback((e: React.MouseEvent, columnIndex: number) => {
-    // Only allow resizing for pre-condition (index 3) and test step (index 4) columns
-    if (columnIndex !== 3 && columnIndex !== 4) return;
+    // Only allow resizing for description (index 3), test step (index 4), and expected result (index 5) columns
+    if (columnIndex !== 3 && columnIndex !== 4 && columnIndex !== 5) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -369,7 +394,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   }, [columnWidths]);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (isResizing !== null && (isResizing === 3 || isResizing === 4)) {
+    if (isResizing !== null && (isResizing === 3 || isResizing === 4 || isResizing === 5)) {
       const deltaX = e.clientX - startX;
 
       // Get table width for percentage calculation
@@ -380,7 +405,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
       const percentageChange = (deltaX / tableWidth) * 100;
 
       // Define minimum percentages for resizable columns
-      const minPercentages = [4, 10, 10, 12, 12, 8, 8, 12, 6];
+      const minPercentages = [4, 12, 4, 12, 12, 12, 7, 7, 8, 6];
 
       // Calculate new percentage with constraints
       const newPercentage = Math.max(minPercentages[isResizing], startWidth + percentageChange);
@@ -603,8 +628,8 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
               >
                 {tab.name} ({tab.count})
@@ -623,8 +648,8 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               <button
                 onClick={() => setIsEditing(!isEditing)}
                 className={`px-4 py-2 text-sm font-medium rounded-md ${isEditing
-                    ? 'bg-gray-500 text-white hover:bg-gray-600'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-gray-500 text-white hover:bg-gray-600'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
               >
                 {isEditing ? '편집 취소' : '편집 모드'}
@@ -659,10 +684,10 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               />
             </div>
             <div style={{ width: `${columnWidths[1]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">타이틀</span>
+              <span className="text-sm font-medium text-gray-500">카테고리</span>
             </div>
             <div style={{ width: `${columnWidths[2]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">카테고리</span>
+              <span className="text-sm font-medium text-gray-500">페이지</span>
             </div>
             <div
               style={{ width: `${columnWidths[3]}%` }}
@@ -670,7 +695,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 }`}
               onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
             >
-              <span className="text-sm font-medium text-gray-500">사전 조건</span>
+              <span className="text-sm font-medium text-gray-500">설명</span>
             </div>
             <div
               style={{ width: `${columnWidths[4]}%` }}
@@ -680,16 +705,24 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
             >
               <span className="text-sm font-medium text-gray-500">확인 방법</span>
             </div>
-            <div style={{ width: `${columnWidths[5]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">우선순위</span>
+            <div
+              style={{ width: `${columnWidths[5]}%` }}
+              className={`text-center px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                }`}
+              onMouseDown={!isEditing ? (e) => handleResizeStart(e, 5) : undefined}
+            >
+              <span className="text-sm font-medium text-gray-500">기대 결과</span>
             </div>
             <div style={{ width: `${columnWidths[6]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">상태</span>
+              <span className="text-sm font-medium text-gray-500">우선순위</span>
             </div>
             <div style={{ width: `${columnWidths[7]}%` }} className="text-center px-2 border-r border-gray-300">
+              <span className="text-sm font-medium text-gray-500">상태</span>
+            </div>
+            <div style={{ width: `${columnWidths[8]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">생성일</span>
             </div>
-            <div style={{ width: `${columnWidths[8]}%` }} className="text-center px-2">
+            <div style={{ width: `${columnWidths[9]}%` }} className="text-center px-2">
               <span className="text-sm font-medium text-gray-500">작업</span>
             </div>
           </div>
@@ -708,24 +741,8 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                   />
                 </div>
 
-                {/* Title */}
-                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  {isEditing && selectedTestCases.has(testCase.id) ? (
-                    <input
-                      type="text"
-                      value={editingData[testCase.id]?.title || testCase.title}
-                      onChange={(e) => handleEditField(testCase.id, 'title', e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  ) : (
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {getClassification1(testCase.category)}
-                    </p>
-                  )}
-                </div>
-
                 {/* Category */}
-                <div style={{ width: `${columnWidths[2]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
                     <input
                       type="text"
@@ -735,12 +752,19 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                     />
                   ) : (
                     <span className="text-sm text-gray-500 truncate">
-                      {getClassification2And3(testCase.category)}
+                      {testCase.category_name || testCase.category || '-'}
                     </span>
                   )}
                 </div>
 
-                {/* Pre-condition */}
+                {/* Page Numbers */}
+                <div style={{ width: `${columnWidths[2]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                  <span className="text-xs text-gray-500">
+                    {testCase.page_numbers || '-'}
+                  </span>
+                </div>
+
+                {/* Description */}
                 <div
                   style={{ width: `${columnWidths[3]}%` }}
                   className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
@@ -762,41 +786,52 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                       </button>
                     )}
                     <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
-                      {isEditing && selectedTestCases.has(testCase.id) ? (
-                        <textarea
-                          defaultValue={parseDescription(testCase.description).preCondition || ''}
-                          onChange={(e) => handleEditField(testCase.id, 'preCondition', e.target.value)}
-                          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-                          rows={3}
-                          placeholder="사전 조건을 입력하세요..."
-                        />
-                      ) : !expandedRows.has(testCase.id) ? (
-                        <span
-                          className="text-sm text-gray-600 leading-relaxed"
-                          style={{
-                            lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word'
-                          }}
-                        >
-                          {parseDescription(testCase.description).preCondition ? (
-                            parseDescription(testCase.description).preCondition.length > 20 ?
-                              `${parseDescription(testCase.description).preCondition.substring(0, 20)}...` :
-                              parseDescription(testCase.description).preCondition
-                          ) : "사전 조건 없음"}
-                        </span>
-                      ) : parseDescription(testCase.description).preCondition && (
-                        <div
-                          className="text-sm text-gray-600 leading-relaxed"
-                          style={{
-                            wordBreak: 'keep-all',
-                            overflowWrap: 'break-word',
-                            whiteSpace: 'pre-line'
-                          }}
-                        >
-                          {parseDescription(testCase.description).preCondition}
-                        </div>
-                      )}
+                      {(() => {
+                        const pureDescription = getPureDescription(testCase.description || '');
+
+                        if (isEditing && selectedTestCases.has(testCase.id)) {
+                          return (
+                            <textarea
+                              defaultValue={pureDescription}
+                              onChange={(e) => handleEditField(testCase.id, 'description', e.target.value)}
+                              className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                              rows={3}
+                              placeholder="설명을 입력하세요..."
+                            />
+                          );
+                        } else if (!expandedRows.has(testCase.id)) {
+                          return (
+                            <span
+                              className="text-sm text-gray-600 leading-relaxed"
+                              style={{
+                                lineHeight: columnWidths[3] > 25 ? '1.6' : columnWidths[3] > 20 ? '1.4' : '1.2',
+                                wordBreak: 'break-word',
+                                overflowWrap: 'break-word'
+                              }}
+                            >
+                              {pureDescription ? (
+                                pureDescription.length > 20 ?
+                                  `${pureDescription.substring(0, 20)}...` :
+                                  pureDescription
+                              ) : "설명 없음"}
+                            </span>
+                          );
+                        } else if (pureDescription) {
+                          return (
+                            <div
+                              className="text-sm text-gray-600 leading-relaxed"
+                              style={{
+                                wordBreak: 'keep-all',
+                                overflowWrap: 'break-word',
+                                whiteSpace: 'pre-line'
+                              }}
+                            >
+                              {pureDescription}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -823,30 +858,102 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                       </button>
                     )}
                     <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
+                      {(() => {
+                        // test_strategy 필드를 우선 사용, 없으면 description에서 파싱
+                        const testSteps = testCase.test_strategy || parseDescription(testCase.description).testStep || '';
+
+                        if (isEditing && selectedTestCases.has(testCase.id)) {
+                          return (
+                            <textarea
+                              defaultValue={testSteps}
+                              onChange={(e) => handleEditField(testCase.id, 'testStep', e.target.value)}
+                              className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 resize-none"
+                              rows={3}
+                              placeholder="확인 방법을 입력하세요..."
+                            />
+                          );
+                        } else if (!expandedRows.has(testCase.id)) {
+                          return (
+                            <span
+                              className="text-sm text-gray-600 leading-relaxed"
+                              style={{
+                                lineHeight: columnWidths[4] > 25 ? '1.6' : columnWidths[4] > 20 ? '1.4' : '1.2',
+                                wordBreak: 'break-word',
+                                overflowWrap: 'break-word'
+                              }}
+                            >
+                              {testSteps ? (
+                                testSteps.length > 20 ?
+                                  `${testSteps.substring(0, 20)}...` :
+                                  testSteps
+                              ) : "확인 방법 없음"}
+                            </span>
+                          );
+                        } else if (testSteps) {
+                          return (
+                            <div
+                              className="text-sm text-gray-600 leading-relaxed"
+                              style={{
+                                wordBreak: 'keep-all',
+                                overflowWrap: 'break-word',
+                                whiteSpace: 'pre-line'
+                              }}
+                            >
+                              {testSteps}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expected Result */}
+                <div
+                  style={{ width: `${columnWidths[5]}%` }}
+                  className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                    }`}
+                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 5) : undefined}
+                >
+                  <div className="flex flex-1">
+                    {!isEditing && (
+                      <button
+                        onClick={() => toggleRowExpansion(testCase.id)}
+                        className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
+                      >
+                        {expandedRows.has(testCase.id) ? (
+                          <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                        )}
+                      </button>
+                    )}
+                    <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
                       {isEditing && selectedTestCases.has(testCase.id) ? (
                         <textarea
-                          defaultValue={parseDescription(testCase.description).testStep || ''}
-                          onChange={(e) => handleEditField(testCase.id, 'testStep', e.target.value)}
-                          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 resize-none"
+                          defaultValue={testCase.expected_result || parseDescription(testCase.description).expectedResult || ''}
+                          onChange={(e) => handleEditField(testCase.id, 'expectedResult', e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
                           rows={3}
-                          placeholder="확인 방법을 입력하세요..."
+                          placeholder="기대 결과를 입력하세요..."
                         />
                       ) : !expandedRows.has(testCase.id) ? (
                         <span
                           className="text-sm text-gray-600 leading-relaxed"
                           style={{
-                            lineHeight: columnWidths[4] > 25 ? '1.6' : columnWidths[4] > 20 ? '1.4' : '1.2',
+                            lineHeight: columnWidths[5] > 25 ? '1.6' : columnWidths[5] > 20 ? '1.4' : '1.2',
                             wordBreak: 'break-word',
                             overflowWrap: 'break-word'
                           }}
                         >
-                          {parseDescription(testCase.description).testStep ? (
-                            parseDescription(testCase.description).testStep.length > 20 ?
-                              `${parseDescription(testCase.description).testStep.substring(0, 20)}...` :
-                              parseDescription(testCase.description).testStep
-                          ) : "확인 방법 없음"}
+                          {(testCase.expected_result || parseDescription(testCase.description).expectedResult) ? (
+                            (testCase.expected_result || parseDescription(testCase.description).expectedResult).length > 20 ?
+                              `${(testCase.expected_result || parseDescription(testCase.description).expectedResult).substring(0, 20)}...` :
+                              (testCase.expected_result || parseDescription(testCase.description).expectedResult)
+                          ) : "기대 결과 없음"}
                         </span>
-                      ) : parseDescription(testCase.description).testStep && (
+                      ) : (testCase.expected_result || parseDescription(testCase.description).expectedResult) && (
                         <div
                           className="text-sm text-gray-600 leading-relaxed"
                           style={{
@@ -855,7 +962,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                             whiteSpace: 'pre-line'
                           }}
                         >
-                          {parseDescription(testCase.description).testStep}
+                          {testCase.expected_result || parseDescription(testCase.description).expectedResult}
                         </div>
                       )}
                     </div>
@@ -863,7 +970,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
 
                 {/* Priority */}
-                <div style={{ width: `${columnWidths[5]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
                     <select
                       value={editingData[testCase.id]?.priority || testCase.priority}
@@ -901,7 +1008,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
 
                 {/* Status */}
-                <div style={{ width: `${columnWidths[6]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   {isEditing && selectedTestCases.has(testCase.id) ? (
                     <select
                       value={editingData[testCase.id]?.status || testCase.status}
@@ -945,14 +1052,14 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 </div>
 
                 {/* Created Date */}
-                <div style={{ width: `${columnWidths[7]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[8]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-sm text-gray-500">
                     {new Date(testCase.created_at).toLocaleDateString('ko-KR')}
                   </span>
                 </div>
 
                 {/* Actions */}
-                <div style={{ width: `${columnWidths[8]}%` }} className="flex justify-center items-center px-2">
+                <div style={{ width: `${columnWidths[9]}%` }} className="flex justify-center items-center px-2">
                   <div className="flex items-center justify-center space-x-2">
                     <Link
                       href={`/test-cases/${testCase.id}`}

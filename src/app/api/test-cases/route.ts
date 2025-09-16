@@ -11,11 +11,13 @@ export async function GET(request: NextRequest) {
         tc.id,
         tc.title,
         tc.description,
+        tc.test_strategy,
         tc.priority,
         tc.status,
         tc.expected_result,
         tc.created_at,
         tc.updated_at,
+        tc.page_numbers,
         tcat.name as category_name,
         p.name as project_name,
         u.username as created_by_name

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { XMarkIcon, DocumentArrowUpIcon, SparklesIcon, PhotoIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { useState, useRef, useEffect } from 'react';
+import { XMarkIcon, DocumentArrowUpIcon, SparklesIcon, PhotoIcon, TrashIcon, StopIcon } from '@heroicons/react/24/outline';
 
 interface AIGenerationModalProps {
   isOpen: boolean;
@@ -24,8 +24,10 @@ export default function AIGenerationModal({
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const supportedFormats = [
     '.pdf', '.docx', '.doc', '.pptx', '.ppt',
@@ -35,6 +37,55 @@ export default function AIGenerationModal({
   const supportedImageFormats = [
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'
   ];
+
+  // 브라우저 새로고침/종료 시 진행 중인 작업 중단
+  useEffect(() => {
+    const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+      if (currentTaskId && isGenerating) {
+        console.log('🛑 브라우저 종료/새로고침 감지 - 작업 중단 요청:', currentTaskId);
+
+        // AbortController로 진행 중인 요청 취소
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          console.log('🛑 AbortController로 요청 취소');
+        }
+
+        // 서버에 중단 요청 (keepalive로 브라우저 종료 시에도 요청 보장)
+        try {
+          await fetch(`/api/ai/progress?taskId=${currentTaskId}`, {
+            method: 'DELETE',
+            keepalive: true
+          });
+          console.log('✅ 브라우저 종료 시 작업 중단 요청 완료');
+        } catch (error) {
+          console.log('❌ 브라우저 종료 시 작업 중단 요청 실패:', error);
+        }
+
+        // 브라우저에 확인 메시지 표시 (선택사항)
+        event.preventDefault();
+        event.returnValue = 'AI 분석이 진행 중입니다. 페이지를 떠나면 작업이 중단됩니다.';
+        return event.returnValue;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && currentTaskId && isGenerating) {
+        console.log('🛑 페이지 숨김 감지 - 작업 중단 고려');
+        // 페이지가 숨겨졌을 때는 즉시 중단하지 않고 로그만 남김
+        // 필요시 여기서 중단 로직 추가 가능
+      }
+    };
+
+    if (isGenerating && currentTaskId) {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentTaskId, isGenerating]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -70,6 +121,46 @@ export default function AIGenerationModal({
     event.preventDefault();
   };
 
+  const handleCancel = async () => {
+    try {
+      // AbortController로 진행 중인 요청 취소
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        console.log('🛑 AbortController로 요청 취소');
+      }
+
+      // taskId가 있으면 서버에 중단 요청
+      if (currentTaskId) {
+        console.log('🛑 AI 분석 중단 요청:', currentTaskId);
+        const response = await fetch(`/api/ai/progress?taskId=${currentTaskId}`, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ 중단 성공:', result.message);
+          setError('분석이 중단되었습니다.');
+        } else {
+          console.log('❌ 중단 실패:', response.status);
+          setError('중단 요청에 실패했습니다.');
+        }
+      } else {
+        // taskId가 없어도 로컬 상태는 중단
+        console.log('🛑 로컬 상태 중단 (taskId 없음)');
+        setError('분석이 중단되었습니다.');
+      }
+    } catch (err) {
+      console.log('❌ 중단 요청 에러:', err);
+      setError('중단 요청 중 오류가 발생했습니다.');
+    } finally {
+      // 항상 상태 초기화
+      setIsGenerating(false);
+      setProgress(0);
+      setCurrentTaskId(null);
+      abortControllerRef.current = null;
+    }
+  };
+
   const handleGenerate = async () => {
     if (!uploadedFile) {
       setError('파일을 선택해주세요.');
@@ -79,6 +170,11 @@ export default function AIGenerationModal({
     setIsGenerating(true);
     setProgress(0);
     setError(null);
+
+    // AbortController 생성
+    abortControllerRef.current = new AbortController();
+    let progressInterval: NodeJS.Timeout | null = null;
+    let taskId: string | null = null;
 
     try {
       // 파일 업로드
@@ -92,30 +188,158 @@ export default function AIGenerationModal({
         formData.append('images', imageFile);
       });
 
-      const response = await fetch('/api/ai/generate-testcases', {
+      console.log('🚀 AI 분석 시작 - AbortController 연결됨');
+
+      // 비동기로 API 호출 시작 (AbortController 연결)
+      const responsePromise = fetch('/api/ai/generate-testcases', {
         method: 'POST',
         body: formData,
+        signal: abortControllerRef.current.signal
       });
+
+      const response = await responsePromise;
 
       if (!response.ok) {
         throw new Error('AI 생성 중 오류가 발생했습니다.');
       }
 
+      // 먼저 응답을 받아서 taskId 추출
       const result = await response.json();
+      console.log('🔍 API 응답 받음:', { success: result.success, taskId: result.taskId, generatedCount: result.generatedCount });
 
-      if (result.success) {
-        onGenerationComplete();
-        onClose();
-        // 성공 메시지 표시
-        alert(`${result.generatedCount}개의 테스트케이스가 생성되었습니다.`);
+      // taskId가 있으면 즉시 진행률 폴링 시작
+      if (result.taskId) {
+        taskId = result.taskId;
+        setCurrentTaskId(taskId); // 상태에 저장
+        console.log('🔄 진행률 폴링 시작:', taskId);
+
+        // 즉시 한 번 진행률 체크
+        try {
+          const initialProgressResponse = await fetch(`/api/ai/progress?taskId=${taskId}`);
+          if (initialProgressResponse.ok) {
+            const initialProgressData = await initialProgressResponse.json();
+            if (initialProgressData.success) {
+              console.log('📊 초기 진행률:', initialProgressData.data.progress + '%', initialProgressData.data.message);
+              setProgress(initialProgressData.data.progress);
+            }
+          } else if (initialProgressResponse.status === 404) {
+            // 초기 조회에서 404 = 이미 완료된 작업
+            console.log('✅ 초기 조회에서 작업 완료 감지 (404)');
+            setProgress(100);
+            setIsGenerating(false);
+            onGenerationComplete();
+            alert('테스트케이스 생성이 완료되었습니다.');
+            onClose();
+            return; // 폴링 시작하지 않고 종료
+          }
+        } catch (initialError) {
+          console.log('⚠️ 초기 진행률 조회 실패:', initialError);
+        }
+
+        // 1초마다 진행률 폴링 (완료 플래그 사용)
+        let isPollingComplete = false;
+        progressInterval = setInterval(async () => {
+          // 이미 완료된 경우 폴링 중단
+          if (isPollingComplete) {
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+            return;
+          }
+
+          try {
+            const progressResponse = await fetch(`/api/ai/progress?taskId=${taskId}`);
+            console.log('🌐 Progress API 응답 상태:', progressResponse.status);
+            if (progressResponse.ok) {
+              const progressData = await progressResponse.json();
+              if (progressData.success) {
+                const progressInfo = progressData.data;
+                console.log('📊 진행률 업데이트:', progressInfo.progress + '%', progressInfo.message);
+                setProgress(progressInfo.progress);
+
+                // 완료되면 폴링 중지하고 결과 처리
+                if (progressInfo.isComplete) {
+                  console.log('✅ 진행률 폴링 완료');
+                  isPollingComplete = true;
+                  if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                  }
+
+                  // 완료 후 결과 처리
+                  if (progressInfo.result && progressInfo.result.success) {
+                    setIsGenerating(false);
+                    onGenerationComplete();
+                    alert(`${progressInfo.result.generatedCount || result.generatedCount}개의 테스트케이스가 생성되었습니다.`);
+                    onClose();
+                  }
+                }
+              } else {
+                console.log('❌ 진행률 조회 실패:', progressData.error);
+              }
+            } else if (progressResponse.status === 404) {
+              // 404 에러는 작업이 완료되어 정리된 것으로 간주
+              console.log('✅ 작업 완료로 간주 (404 - 진행률 정보 정리됨)');
+              console.log('🔄 완료 처리 시작...');
+
+              isPollingComplete = true;
+              if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+                console.log('⏹️ 진행률 폴링 중단됨');
+              }
+
+              // 완료 처리
+              console.log('📊 진행률을 100%로 설정');
+              setProgress(100);
+              console.log('🔄 생성 상태를 false로 변경');
+              setIsGenerating(false);
+              console.log('✅ onGenerationComplete 호출');
+              onGenerationComplete();
+              console.log('🎉 완료 팝업 표시');
+              alert('테스트케이스 생성이 완료되었습니다.');
+              console.log('❌ 모달 닫기');
+              onClose();
+            } else {
+              console.log('❌ 진행률 API 응답 실패:', progressResponse.status);
+              console.log('🔍 404인지 확인:', progressResponse.status === 404);
+            }
+          } catch (progressError) {
+            console.log('❌ 진행률 조회 에러:', progressError);
+          }
+        }, 1000);
       } else {
-        throw new Error(result.error || '테스트케이스 생성에 실패했습니다.');
+        console.log('⚠️ taskId가 없어 진행률 폴링을 시작할 수 없습니다.');
+
+        // taskId가 없으면 기존 방식으로 처리
+        if (result.success) {
+          setProgress(100);
+          onGenerationComplete();
+          onClose();
+          alert(`${result.generatedCount}개의 테스트케이스가 생성되었습니다.`);
+        } else {
+          throw new Error(result.error || '테스트케이스 생성에 실패했습니다.');
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+      // AbortError는 사용자가 의도적으로 중단한 것이므로 별도 처리
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('✅ 사용자가 분석을 중단했습니다');
+        setError('분석이 중단되었습니다.');
+      } else {
+        console.log('❌ AI 분석 에러:', err);
+        setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+      }
     } finally {
+      // 폴링 중지
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setIsGenerating(false);
       setProgress(0);
+      setCurrentTaskId(null);
+      abortControllerRef.current = null;
     }
   };
 
@@ -124,6 +348,7 @@ export default function AIGenerationModal({
     setImageFiles([]);
     setError(null);
     setProgress(0);
+    setCurrentTaskId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -174,8 +399,8 @@ export default function AIGenerationModal({
 
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center ${uploadedFile
-                  ? 'border-green-300 bg-green-50'
-                  : 'border-gray-300 hover:border-blue-400'
+                ? 'border-green-300 bg-green-50'
+                : 'border-gray-300 hover:border-blue-400'
                 }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -321,15 +546,46 @@ export default function AIGenerationModal({
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700">
-                  AI가 테스트케이스를 생성하고 있습니다...
+                  {progress < 50
+                    ? '📋 AI가 문서를 분석하고 명세서를 작성하고 있습니다...'
+                    : progress === 50
+                      ? '✅ 명세화 완료! 🚀 테스트케이스를 생성하고 있습니다...'
+                      : '🧪 AI가 테스트케이스를 생성하고 있습니다...'
+                  }
                 </span>
                 <span className="text-sm text-gray-500">{progress}%</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                {/* 50% 구분선 */}
+                <div className="absolute left-1/2 top-0 w-px h-2 bg-gray-400 z-10"></div>
                 <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  className={`h-2 rounded-full transition-all duration-300 ${progress < 50
+                    ? 'bg-blue-600'
+                    : progress === 50
+                      ? 'bg-green-500'
+                      : 'bg-purple-600'
+                    }`}
                   style={{ width: `${progress}%` }}
                 ></div>
+              </div>
+              {/* 단계 표시 */}
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span className={progress >= 0 ? 'font-medium' : ''}>
+                  📋 명세화 단계
+                </span>
+                <span className={progress >= 50 ? 'font-medium text-purple-600' : ''}>
+                  🧪 테스트케이스 생성
+                </span>
+              </div>
+              {/* Cancel Button - isGenerating일 때 항상 표시 */}
+              <div className="flex justify-center mt-3">
+                <button
+                  onClick={handleCancel}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2 text-sm"
+                >
+                  <StopIcon className="h-4 w-4" />
+                  <span>분석 중단</span>
+                </button>
               </div>
             </div>
           )}
