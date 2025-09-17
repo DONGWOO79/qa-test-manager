@@ -155,7 +155,7 @@ ${pageContent}
           max_tokens: 800
         }
       }),
-      signal: abortSignal // AbortSignal 추가
+      signal: abortSignal || AbortSignal.timeout(1800000) // 30분 타임아웃
     });
 
     if (!response.ok) {
@@ -279,7 +279,7 @@ ${pageContent}
           max_tokens: 2000
         }
       }),
-      signal: abortSignal
+      signal: abortSignal || AbortSignal.timeout(1800000) // 30분 타임아웃
     });
 
     if (!response.ok) {
@@ -363,7 +363,7 @@ ${pageSpecs.map((spec, index) => `#### 페이지 ${index + 1} 상세\n${spec}`).
           max_tokens: 4000
         }
       }),
-      signal: abortSignal
+      signal: abortSignal || AbortSignal.timeout(1800000) // 30분 타임아웃
     });
 
     if (!response.ok) {
@@ -386,43 +386,50 @@ ${pageSpecs.map((spec, index) => `#### 페이지 ${index + 1} 상세\n${spec}`).
 }
 
 /**
- * 새로운 페이지별 AI 명세화 - 각 페이지를 독립 분석 후 통합
+ * 🆕 3페이지 청크 기반 AI 테스트케이스 생성 - 프롬프트 길이 최적화
  */
-async function createPageByPageSpecificationWithAI(
+async function create3PageChunkTestCasesWithAI(
   extractedText: string,
   imageAnalysis: string,
   projectName: string,
   progressTracker: ProgressTracker,
   abortSignal: AbortSignal
-): Promise<string> {
-  console.log('🚀 페이지별 개별 AI 분석 시작...');
+): Promise<{ testCases: any[], totalGenerated: number }> {
+  console.log('🚀 3페이지 청크 기반 AI 분석 시작...');
 
   // imageAnalysis에서 페이지별 내용 분리
   const pageContents: string[] = [];
+  const pageNumbers: number[] = [];
 
   if (imageAnalysis && imageAnalysis.includes('[페이지')) {
     // 이미지 분석 결과를 페이지별로 분리
-    const pageMatches = imageAnalysis.split(/\[페이지 \d+\]/);
-    pageMatches.forEach((content, index) => {
-      if (index > 0 && content.trim()) { // 첫 번째는 빈 문자열이므로 제외
-        pageContents.push(content.trim());
+    const pageMatches = imageAnalysis.split(/\[페이지 (\d+)\]/);
+    for (let i = 1; i < pageMatches.length; i += 2) {
+      const pageNum = parseInt(pageMatches[i]);
+      const content = pageMatches[i + 1]?.trim();
+      if (content) {
+        pageNumbers.push(pageNum);
+        pageContents.push(content);
       }
-    });
+    }
   }
 
   // 텍스트에서도 페이지 정보가 있다면 활용
   if (extractedText && extractedText.includes('[페이지')) {
-    const textPageMatches = extractedText.split(/\[페이지 \d+\]/);
-    textPageMatches.forEach((content, index) => {
-      if (index > 0 && content.trim()) {
-        // 기존 페이지 내용과 병합
-        if (pageContents[index - 1]) {
-          pageContents[index - 1] += '\n\n=== 추가 텍스트 ===\n' + content.trim();
+    const textPageMatches = extractedText.split(/\[페이지 (\d+)\]/);
+    for (let i = 1; i < textPageMatches.length; i += 2) {
+      const pageNum = parseInt(textPageMatches[i]);
+      const content = textPageMatches[i + 1]?.trim();
+      if (content) {
+        const existingIndex = pageNumbers.findIndex(num => num === pageNum);
+        if (existingIndex >= 0) {
+          pageContents[existingIndex] += '\n\n=== 추가 텍스트 ===\n' + content;
         } else {
-          pageContents.push(content.trim());
+          pageNumbers.push(pageNum);
+          pageContents.push(content);
         }
       }
-    });
+    }
   }
 
   // 페이지별 내용이 분리되지 않았다면 전체 내용을 단일 페이지로 처리
@@ -431,100 +438,225 @@ async function createPageByPageSpecificationWithAI(
     const combinedContent = imageAnalysis ?
       `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}` :
       extractedText;
+    pageNumbers.push(1);
     pageContents.push(combinedContent);
   }
 
   console.log(`📊 분석할 페이지 수: ${pageContents.length}개`);
 
-  // 각 페이지별로 AI 분류 후 명세화 수행
-  const pageSpecs: string[] = [];
-  const pageClassifications: Array<{ pageNumber: number, classification: any }> = [];
+  // 🏷️ 1단계: 각 페이지별로 AI 분류 (functional vs metadata)
+  const functionalPages: Array<{ pageNumber: number, content: string }> = [];
   const totalPages = pageContents.length;
-  let functionalPageCount = 0;
 
   for (let i = 0; i < totalPages; i++) {
-    const pageNumber = i + 1;
-    const progressPercent = 25 + Math.round((i / totalPages) * 15); // 25-40% 구간 (분류용)
+    const pageNumber = pageNumbers[i];
+    const progressPercent = 25 + Math.round((i / totalPages) * 15); // 25-40% 구간
 
     progressTracker.logStep(`CLASSIFY_${pageNumber}`, progressPercent, `페이지 ${pageNumber}/${totalPages} AI 분류 분석 중`);
 
     try {
-      // 1단계: AI 페이지 분류
       const classification = await classifyPageWithAI(pageNumber, pageContents[i], projectName, abortSignal);
-      pageClassifications.push({ pageNumber, classification });
 
       console.log(`🏷️ 페이지 ${pageNumber} 분류: ${classification.classification} (${classification.shouldSkip ? '제외' : '포함'})`);
       console.log(`📝 분류 이유: ${classification.reason}`);
 
-      // 2단계: 기능 페이지만 명세화 수행
-      if (!classification.shouldSkip) {
-        const specProgressPercent = 40 + Math.round((functionalPageCount / totalPages) * 8); // 40-48% 구간
-        progressTracker.logStep(`PAGE_${pageNumber}`, specProgressPercent, `페이지 ${pageNumber} AI 명세화 중 (${classification.classification})`);
-
-        const pageSpec = await createPageSpecificationWithAI(pageNumber, pageContents[i], projectName, abortSignal);
-        pageSpecs.push(pageSpec);
-        functionalPageCount++;
-        console.log(`✅ 페이지 ${pageNumber} 명세화 완료 (포함됨)`);
-      } else {
-        console.log(`⏭️ 페이지 ${pageNumber} 건너뛰기 (${classification.classification}: ${classification.reason})`);
-        // 건너뛴 페이지도 기록은 남김 (디버깅용)
-        pageSpecs.push(`[페이지 ${pageNumber}] ${classification.classification} 페이지로 분류되어 테스트케이스 생성에서 제외됨 - ${classification.reason}`);
+      // functional 페이지만 수집
+      if (!classification.shouldSkip && classification.classification === 'functional') {
+        functionalPages.push({
+          pageNumber,
+          content: pageContents[i]
+        });
       }
-
     } catch (error) {
-      console.error(`❌ 페이지 ${pageNumber} 처리 실패:`, error);
-      pageSpecs.push(`[페이지 ${pageNumber}] 처리 실패: ${(error as Error).message}`);
+      console.error(`❌ 페이지 ${pageNumber} 분류 실패:`, error);
     }
   }
 
-  console.log(`📊 페이지 분류 결과: 전체 ${totalPages}페이지 중 ${functionalPageCount}페이지가 기능 페이지로 분류됨`);
-  pageClassifications.forEach(({ pageNumber, classification }) => {
-    console.log(`  - 페이지 ${pageNumber}: ${classification.classification} (신뢰도: ${classification.confidence})`);
-  });
+  console.log(`📊 분류 결과: 전체 ${totalPages}페이지 중 ${functionalPages.length}페이지가 기능 페이지로 분류됨`);
 
   // 🚨 기능 페이지가 없는 경우 조기 종료
-  if (functionalPageCount === 0) {
+  if (functionalPages.length === 0) {
     console.log('🚫 기능 페이지가 없어 테스트케이스 생성을 건너뜁니다.');
     progressTracker.logStep('NO_FUNCTIONAL_PAGES', 100, '모든 페이지가 메타데이터로 분류되어 테스트케이스 생성이 불필요합니다.');
-
-    return `## ${projectName} - 메타데이터 전용 문서
-
-### 📋 AI 페이지 분류 결과
-전체 ${totalPages}페이지가 모두 **메타데이터 페이지**로 분류되었습니다.
-
-${pageClassifications.map(({ pageNumber, classification }) =>
-      `- **페이지 ${pageNumber}**: ${classification.classification} (신뢰도: ${classification.confidence})\n  ${classification.reason}`
-    ).join('\n\n')}
-
-### 🎯 결론
-이 문서는 **문서 정보, 버전 관리, 변경 이력** 등 메타데이터만 포함하고 있어, 실제 기능이나 화면에 대한 테스트케이스를 생성할 필요가 없습니다.
-
-**권장사항**: 실제 기능 명세가 포함된 페이지가 있는 문서로 테스트케이스를 생성해주세요.`;
+    return { testCases: [], totalGenerated: 0 };
   }
 
-  // 페이지별 명세서들을 통합
-  progressTracker.logStep('INTEGRATE', 48, `${functionalPageCount}개 기능 페이지 명세서 통합 중`);
+  // 🔧 2단계: 기능 페이지를 3페이지씩 청크로 분할
+  const chunks: Array<{
+    pages: Array<{ pageNumber: number, content: string }>,
+    pageNumbers: number[],
+    combinedContent: string,
+    chunkIndex: number
+  }> = [];
 
-  try {
-    // 분류 정보를 포함한 통합 명세서 생성
-    const classificationSummary = pageClassifications.map(({ pageNumber, classification }) =>
-      `페이지 ${pageNumber}: ${classification.classification} (${classification.shouldSkip ? '제외' : '포함'})`
-    ).join('\n');
+  for (let i = 0; i < functionalPages.length; i += 3) {
+    const chunkPages = functionalPages.slice(i, i + 3);
+    const chunkPageNumbers = chunkPages.map(p => p.pageNumber);
+    const combinedContent = chunkPages.map(p =>
+      `[페이지 ${p.pageNumber}]\n${p.content}`
+    ).join('\n\n');
 
-    const enhancedSpecs = [
-      `## AI 페이지 분류 결과\n전체 ${totalPages}페이지 중 ${functionalPageCount}페이지가 기능 페이지로 분류되어 테스트케이스 생성에 포함됩니다.\n\n${classificationSummary}\n\n## 기능 페이지 명세서`,
-      ...pageSpecs
-    ];
-
-    const integratedSpec = await integratePageSpecifications(enhancedSpecs, projectName, abortSignal);
-    console.log('✅ AI 분류 기반 명세서 통합 완료');
-    console.log(`📈 효율성 개선: ${totalPages - functionalPageCount}개 메타데이터 페이지 제외됨`);
-    return integratedSpec;
-  } catch (error) {
-    console.error('❌ 명세서 통합 실패:', error);
-    // 통합 실패 시 페이지별 명세서를 단순 결합
-    return pageSpecs.map((spec, index) => `=== 페이지 ${index + 1} ===\n${spec}`).join('\n\n');
+    chunks.push({
+      pages: chunkPages,
+      pageNumbers: chunkPageNumbers,
+      combinedContent,
+      chunkIndex: Math.floor(i / 3) + 1
+    });
   }
+
+  console.log(`📦 3페이지 청크 생성: ${chunks.length}개 청크`);
+  chunks.forEach((chunk, index) => {
+    console.log(`  - 청크 ${index + 1}: 페이지 ${chunk.pageNumbers.join(', ')} (${chunk.combinedContent.length}자)`);
+  });
+
+  // 🤖 3단계: 각 청크별로 독립적인 테스트케이스 생성
+  const allTestCases: any[] = [];
+  const chunkProcessingStartPercent = 40;
+  const chunkProcessingRange = 40; // 40-80% 구간
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const progressPercent = chunkProcessingStartPercent + Math.round((i / chunks.length) * chunkProcessingRange);
+
+    progressTracker.logStep(`CHUNK_${chunk.chunkIndex}`, progressPercent,
+      `청크 ${chunk.chunkIndex}/${chunks.length} 테스트케이스 생성 중 (페이지 ${chunk.pageNumbers.join(', ')})`);
+
+    try {
+      console.log(`🔄 청크 ${chunk.chunkIndex} 처리 시작 (${chunk.combinedContent.length}자)`);
+
+      // 청크별 테스트케이스 생성 프롬프트
+      const chunkPrompt = create3PageChunkPrompt(chunk.combinedContent, projectName, chunk.pageNumbers);
+      console.log(`📏 청크 ${chunk.chunkIndex} 프롬프트 길이: ${chunkPrompt.length}자`);
+
+      const chunkResult = await callOllama(chunkPrompt, abortSignal, { timeout: 600000 }); // 10분 타임아웃
+      const chunkTestCases = chunkResult?.testCases || [];
+
+      console.log(`✅ 청크 ${chunk.chunkIndex} 완료: ${chunkTestCases.length}개 테스트케이스 생성`);
+      allTestCases.push(...chunkTestCases);
+
+    } catch (error) {
+      console.error(`❌ 청크 ${chunk.chunkIndex} 처리 실패:`, error);
+
+      // 청크 실패 시 fallback 테스트케이스 생성
+      console.log(`🔄 청크 ${chunk.chunkIndex} fallback 테스트케이스 생성`);
+      const fallbackCases = createFallbackTestCasesForChunk(chunk, projectName);
+      allTestCases.push(...fallbackCases);
+    }
+  }
+
+  console.log(`🎉 3페이지 청크 처리 완료: 총 ${allTestCases.length}개 테스트케이스 생성`);
+
+  return {
+    testCases: allTestCases,
+    totalGenerated: allTestCases.length
+  };
+}
+
+/**
+ * 3페이지 청크용 테스트케이스 생성 프롬프트
+ */
+function create3PageChunkPrompt(chunkContent: string, projectName: string, pageNumbers: number[]): string {
+  return `당신은 소프트웨어 테스트 전문가입니다.
+다음은 ${projectName} 프로젝트의 ${pageNumbers.length}개 페이지(페이지 ${pageNumbers.join(', ')})에서 추출한 실제 기능 명세입니다.
+
+**분석 대상 페이지**: ${pageNumbers.join(', ')}
+**문서 내용**:
+${chunkContent}
+
+**목표**: 이 ${pageNumbers.length}개 페이지의 내용을 바탕으로 **15-25개의 구체적인 테스트케이스**를 생성하세요.
+
+**핵심 원칙**:
+✅ **문서 기반**: 위 내용에서 실제로 언급된 기능만 테스트
+✅ **페이지 정보 포함**: pageNumbers 필드에 관련 페이지 번호 명시
+✅ **구체적 시나리오**: 일반적이지 않고 문서 특화된 테스트케이스
+✅ **다양한 카테고리**: function, ui, data, integration, validation 등
+
+**중요 제약사항**:
+🚫 **페이지 번호는 pageNumbers 필드에만**: title, description, steps 등에는 페이지 번호 포함 금지
+🚫 **문서에 없는 내용 금지**: 추측하지 말고 문서 내용만 활용
+🚫 **일반적 테스트 금지**: "${projectName} 특화" 테스트케이스만 생성
+
+**출력 형식**: 반드시 완벽한 JSON 형식으로만 응답하세요.
+{
+  "thinking": "페이지 ${pageNumbers.join(', ')}에서 확인된 주요 기능들과 테스트 접근법 분석",
+  "testCases": [
+    {
+      "title": "구체적이고 명확한 테스트 제목",
+      "description": "이 테스트의 목적과 검증 내용",
+      "preconditions": "테스트 실행 전 필요한 조건들",
+      "steps": ["1. 구체적인 실행 단계", "2. 다음 단계", "3. 검증 단계"],
+      "expectedResult": "예상되는 구체적인 결과",
+      "priority": "high|medium|low|critical",
+      "category": "function|ui|data|integration|validation|security|performance",
+      "pageNumbers": [${pageNumbers.join(', ')}]
+    }
+  ]
+}
+
+**🚨 중요**: 다른 설명 없이 오직 JSON만 출력하세요!`;
+}
+
+/**
+ * 청크 처리 실패 시 fallback 테스트케이스 생성
+ */
+function createFallbackTestCasesForChunk(
+  chunk: { pages: Array<{ pageNumber: number, content: string }>, pageNumbers: number[], combinedContent: string, chunkIndex: number },
+  projectName: string
+): any[] {
+  console.log(`🔄 청크 ${chunk.chunkIndex} fallback 테스트케이스 생성 시작`);
+
+  // 청크 내용에서 키워드 추출
+  const content = chunk.combinedContent.toLowerCase();
+  const keywords: string[] = [];
+
+  // UI 관련 키워드
+  const uiKeywords = ['화면', '버튼', '입력', '선택', '클릭', '메뉴', '탭', '폼', '테이블', '목록'];
+  uiKeywords.forEach(keyword => {
+    if (content.includes(keyword)) {
+      keywords.push(`${keyword} 테스트`);
+    }
+  });
+
+  // 기능 관련 키워드
+  const functionKeywords = ['등록', '수정', '삭제', '조회', '검색', '저장', '로그인', '로그아웃', '생성', '관리'];
+  functionKeywords.forEach(keyword => {
+    if (content.includes(keyword)) {
+      keywords.push(`${keyword} 기능`);
+    }
+  });
+
+  // 데이터 관련 키워드
+  const dataKeywords = ['데이터', '정보', '내용', '파일', '업로드', '다운로드', '가져오기', '내보내기'];
+  dataKeywords.forEach(keyword => {
+    if (content.includes(keyword)) {
+      keywords.push(`${keyword} 처리`);
+    }
+  });
+
+  // 최소 5개 키워드 보장
+  if (keywords.length < 5) {
+    keywords.push('기본 기능 테스트', '화면 표시 테스트', '데이터 입력 테스트', '오류 처리 테스트', '사용자 인터페이스 테스트');
+  }
+
+  const fallbackCases = keywords.slice(0, 8).map((keyword, index) => ({
+    title: `${projectName} ${keyword} 검증`,
+    description: `페이지 ${chunk.pageNumbers.join(', ')}의 ${keyword}이 정상적으로 동작하는지 검증합니다.`,
+    preconditions: `${projectName} 시스템이 정상 실행되고 해당 기능에 접근 가능한 상태`,
+    steps: [
+      `1. ${projectName}에서 해당 기능에 접근합니다.`,
+      `2. ${keyword} 관련 동작을 수행합니다.`,
+      `3. 결과가 올바르게 표시되는지 확인합니다.`,
+      `4. 예외 상황에 대한 처리가 적절한지 검증합니다.`
+    ],
+    expectedResult: `${keyword}이 정상적으로 동작하고 적절한 결과를 반환합니다.`,
+    priority: index < 2 ? 'high' : index < 5 ? 'medium' : 'low',
+    category: keyword.includes('화면') || keyword.includes('버튼') ? 'ui' :
+      keyword.includes('데이터') || keyword.includes('정보') ? 'data' : 'function',
+    pageNumbers: chunk.pageNumbers
+  }));
+
+  console.log(`✅ 청크 ${chunk.chunkIndex} fallback 완료: ${fallbackCases.length}개 테스트케이스 생성`);
+  return fallbackCases;
 }
 
 /**
@@ -627,7 +759,7 @@ ${combinedText}
           max_tokens: 6000, // 상세한 명세서를 위해 더 많은 토큰
         }
       }),
-      signal: abortSignal // AbortSignal 사용
+      signal: abortSignal || AbortSignal.timeout(1800000) // 30분 타임아웃
     });
 
     if (!response.ok) {
@@ -1156,8 +1288,8 @@ async function analyzeImageWithVision(imageBase64: string, projectName: string):
           num_predict: 2048,  // 예측 토큰 수 제한
         }
       }),
-      // Vision AI 타임아웃을 10분으로 연장하고 더 자세한 로깅 추가
-      signal: AbortSignal.timeout(600000) // 10분 타임아웃
+      // Vision AI 타임아웃을 30분으로 연장하고 더 자세한 로깅 추가
+      signal: AbortSignal.timeout(1800000) // 30분 타임아웃
     });
 
     if (!visionResponse.ok) {
@@ -1190,7 +1322,7 @@ async function analyzeImageWithVision(imageBase64: string, projectName: string):
 function createSpecKitBasedPrompt(
   specResult: SpecKitGenerationResult,
   projectName: string,
-  maxTestCases: number = 12
+  maxTestCases: number = 100
 ): string {
   const spec = specResult.specification;
 
@@ -1265,7 +1397,7 @@ ${constraintsText}
 5. **제약 조건 고려**: 제약 조건을 위반하는 경우에 대한 테스트 포함
 
 **생성 규칙:**
-1. **최소 ${Math.max(8, Math.min(maxTestCases, 15))}개의 다양한 테스트케이스** 생성
+1. **최소 50-100개의 다양한 테스트케이스** 생성 (목표: ${maxTestCases}개)
 2. **테스트 타입 분산**:
    - 기능 테스트 (60%): 핵심 기능 동작 검증
    - UI/UX 테스트 (20%): 사용자 인터페이스 검증
@@ -1392,7 +1524,7 @@ ${detailedSpecification}
    - **Low**: 부가 기능, 성능 최적화
 
 **생성 목표**:
-- **최소 15-20개의 테스트케이스** 생성
+- **최소 50-100개의 테스트케이스** 생성
 - **각 테스트케이스는 고유하고 중복되지 않음**
 - **명세서의 모든 섹션을 균형있게 커버**
 
@@ -1491,7 +1623,7 @@ ${combinedContent}
 2. 각 테스트 케이스는 실제 사용자가 수행할 수 있는 작업이어야 함
 3. 문서의 내용과 직접적으로 관련된 테스트만 생성
 4. 문서에 명시된 옵션, 설정, 기능 변경 사항을 중심으로 테스트 케이스 작성
-5. **최소 8-12개의 다양한 테스트 케이스를 생성하세요**
+5. **최소 50-100개의 다양한 테스트 케이스를 생성하세요**
 6. **정상 시나리오, 오류 시나리오, 경계값 테스트를 모두 포함하세요**
 7. **UI 테스트, 기능 테스트, 통합 테스트를 다양하게 생성하세요**
 8. **중복되지 않는 고유한 테스트 케이스만 생성하세요**
@@ -1527,7 +1659,7 @@ ${combinedContent}
 **다시 한번 강조: 모든 필드를 한국어로 작성하고, 문서 내용을 정확히 반영한 테스트 케이스를 생성해주세요.**`;
 }
 
-async function callOllama(prompt: string, abortSignal?: AbortSignal): Promise<any> {
+async function callOllama(prompt: string, abortSignal?: AbortSignal, options?: { timeout?: number }): Promise<any> {
   try {
     console.log('Ollama API 호출 시작');
     console.log('프롬프트 길이:', prompt.length);
@@ -1548,9 +1680,7 @@ async function callOllama(prompt: string, abortSignal?: AbortSignal): Promise<an
           num_ctx: 8192, // 컨텍스트 크기 증가
         }
       }),
-      signal: abortSignal, // AbortSignal 사용
-      // 타임아웃 설정 추가 (5분)
-      timeout: 300000
+      signal: abortSignal || AbortSignal.timeout(options?.timeout || 1800000) // 기본 30분, options로 변경 가능
     });
 
     if (!response.ok) {
@@ -1630,11 +1760,11 @@ async function callOllama(prompt: string, abortSignal?: AbortSignal): Promise<an
 
   } catch (error) {
     console.error('Ollama API 호출 실패:', error);
-    console.error('에러 타입:', error.constructor.name);
-    console.error('에러 메시지:', error.message);
+    console.error('에러 타입:', (error as Error).constructor.name);
+    console.error('에러 메시지:', (error as Error).message);
 
     // 타임아웃 에러인 경우 더 자세한 로그
-    if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+    if ((error as Error).message.includes('timeout') || (error as Error).message.includes('Timeout')) {
       console.error('🕐 Ollama 타임아웃 발생 - 모델이 응답하는데 시간이 너무 오래 걸립니다.');
       console.error('💡 해결 방법: 1) 더 작은 모델 사용, 2) 프롬프트 길이 줄이기, 3) Ollama 서버 재시작');
     }
@@ -1658,15 +1788,30 @@ function createTestCasesFromThinking(thinkingContent: string): any {
   } else if (thinkingContent.includes('업로드') || thinkingContent.includes('파일')) {
     documentKeywords.push('파일 업로드', '파일 검증', '파일 처리', '업로드 완료', '파일 오류', '파일 삭제');
   } else {
-    // 일반적인 키워드 사용
-    documentKeywords.push('기본 실행', '설정 변경', '기능 테스트', '오류 처리', '정상 동작', '경계값 테스트');
+    // 일반적인 키워드 사용 - 대폭 확장
+    documentKeywords.push(
+      '기본 실행', '설정 변경', '기능 테스트', '오류 처리', '정상 동작', '경계값 테스트',
+      'UI 인터페이스 테스트', '데이터 입력 검증', '권한 확인', '성능 테스트',
+      '호환성 테스트', '보안 테스트', '사용성 테스트', '접근성 테스트',
+      '통합 테스트', '시스템 테스트', '회귀 테스트', '스모크 테스트',
+      '부하 테스트', '스트레스 테스트', '사용자 인증', '데이터 검증',
+      '화면 전환', '메뉴 네비게이션', '검색 기능', '필터링', '정렬',
+      '페이지네이션', '데이터 저장', '데이터 수정', '데이터 삭제',
+      '파일 처리', '알림 기능', '에러 메시지', '성공 메시지',
+      '로딩 상태', '빈 데이터 처리', '최대값 처리', '최소값 처리',
+      '중복 데이터 처리', '네트워크 오류', '서버 오류', '클라이언트 오류',
+      '브라우저 호환성', '모바일 반응형', '키보드 네비게이션', '마우스 이벤트',
+      '터치 이벤트', '드래그앤드롭', '복사 붙여넣기', '단축키',
+      '다국어 지원', '시간대 처리', '날짜 형식', '숫자 형식',
+      '통화 형식', '주소 형식', '이메일 형식', '전화번호 형식'
+    );
   }
 
   console.log('생성된 문서 키워드:', documentKeywords);
 
-  // 더 많은 테스트케이스 생성 (최대 6개)
+  // 더 많은 테스트케이스 생성 (최대 100개)
   const testCases = [];
-  const maxCases = Math.min(documentKeywords.length, 6);
+  const maxCases = Math.min(documentKeywords.length, 100);
 
   for (let i = 0; i < maxCases; i++) {
     const keyword = documentKeywords[i];
@@ -1742,7 +1887,6 @@ export async function POST(request: NextRequest) {
 
     // 완료 후 결과 반환
     return NextResponse.json({
-      success: true,
       taskId: taskId,
       ...result
     });
@@ -1817,37 +1961,20 @@ async function processTestCaseGeneration(
     let specKitUsed = false;
 
     try {
-      // 🚀 1단계: 페이지별 개별 AI 명세화 (새로운 방식)
-      console.log('🆕 페이지별 개별 AI 분석 방식 사용');
-      const detailedSpec = await createPageByPageSpecificationWithAI(extractedText, imageAnalysis, projectName, progressTracker, abortSignal);
+      // 🚀 새로운 방식: 3페이지 청크 기반 테스트케이스 직접 생성
+      console.log('🆕 3페이지 청크 기반 AI 분석 방식 사용');
+      const chunkResult = await create3PageChunkTestCasesWithAI(extractedText, imageAnalysis, projectName, progressTracker, abortSignal);
+
+      testCases = chunkResult.testCases;
+      specKitUsed = true;
 
       // 🚨 메타데이터 전용 문서 체크 (기능 페이지 없음)
-      if (detailedSpec.includes('메타데이터 전용 문서') && detailedSpec.includes('테스트케이스를 생성할 필요가 없습니다')) {
+      if (chunkResult.totalGenerated === 0) {
         console.log('🚫 메타데이터 전용 문서로 판단 - 테스트케이스 생성 건너뜀');
-
-        // 빈 테스트케이스로 성공 응답 처리
-        testCases = [];
-        specKitUsed = true;
-
         progressTracker.logStep('METADATA_ONLY', 100, '메타데이터 전용 문서 - 테스트케이스 생성 불필요');
       } else {
-        // 🤖 2단계: AI 분류 기반 통합 명세서로 테스트케이스 생성
-        progressTracker.logStep('SPEC_COMPLETE', 50, '📋 명세화 단계 완료 - 테스트케이스 생성 시작');
-        progressTracker.logStep('AI_TESTCASE', 55, 'AI 분류 완료 - 기능 페이지 기반 테스트케이스 생성 중');
-        console.log('📄 2단계 입력 데이터:');
-        console.log(`- 명세서 길이: ${detailedSpec.length}자`);
-        console.log(`- 명세서 미리보기 (처음 800자):`);
-        console.log(`"${detailedSpec.substring(0, 800)}..."`);
-
-        const enhancedPrompt = createEnhancedTestCasePrompt(detailedSpec);
-        console.log(`- 생성된 프롬프트 길이: ${enhancedPrompt.length}자`);
-
-        aiResult = await callOllama(enhancedPrompt, abortSignal);
-        testCases = aiResult?.testCases || [];
-        specKitUsed = true;
-
-        progressTracker.logStep('AI_COMPLETE', 85, `AI 분류 기반 처리 완료 - ${testCases.length}개 테스트케이스 생성됨`);
-        console.log('- 명세서 길이:', detailedSpec.length);
+        progressTracker.logStep('AI_COMPLETE', 85, `3페이지 청크 기반 처리 완료 - ${testCases.length}개 테스트케이스 생성됨`);
+        console.log(`✅ 3페이지 청크 방식 성공: ${testCases.length}개 테스트케이스 생성`);
       }
 
     } catch (specKitError) {

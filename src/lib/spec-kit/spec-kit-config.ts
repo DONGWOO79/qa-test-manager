@@ -96,9 +96,9 @@ export const SPEC_KIT_CONFIG = {
     // 기본 테스트 전략
     DEFAULT_TEST_STRATEGIES: [
         {
-            type: 'functional' as const,
-            description: '기능 테스트 - 요구사항에 따른 기능 동작 검증',
-            tools: ['Manual Testing', 'Selenium', 'Cypress'],
+            type: 'unit' as const,
+            description: '단위 테스트 - 개별 컴포넌트 기능 검증',
+            tools: ['Jest', 'Mocha', 'JUnit'],
             coverage: 90
         },
         {
