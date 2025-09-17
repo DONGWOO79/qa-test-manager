@@ -481,7 +481,48 @@ class SpecKitAnalyzer {
 
 ## 🔄 Spec Kit 워크플로우 다이어그램
 
-### 전체 처리 흐름
+### 사용자 관점: 전체 사용 단계
+
+```mermaid
+graph TD
+    A[👤 사용자가 프로젝트 생성] --> B[📁 프로젝트 페이지 접근]
+    B --> C[📄 PDF 기획서 업로드<br/>드래그&드롭 또는 파일 선택]
+    C --> D[🚀 'AI로 테스트케이스 생성' 버튼 클릭]
+    
+    D --> E[⏳ 진행률 모달 팝업 표시<br/>0% → 50% → 100%]
+    E --> F[📊 실시간 진행률 확인<br/>- 명세화 단계 (0-50%)<br/>- 테스트케이스 생성 (50-100%)]
+    
+    F --> G{🔄 사용자 액션}
+    G -->|대기| H[✅ 생성 완료 팝업<br/>'XX개 테스트케이스 생성됨']
+    G -->|취소| I[❌ 작업 중단<br/>백그라운드 프로세스 종료]
+    
+    H --> J[📋 테스트케이스 목록 자동 새로고침]
+    J --> K[👀 생성된 테스트케이스 확인<br/>- 제목, 설명, 확인방법<br/>- 기대결과, 우선순위, 페이지번호]
+    
+    K --> L{🎯 사용자 선택}
+    L -->|수정 필요| M[✏️ 개별 테스트케이스 수정]
+    L -->|추가 생성| N[📄 다른 PDF로 추가 생성]
+    L -->|내보내기| O[📊 Excel 파일로 내보내기]
+    L -->|테스트 실행| P[🧪 테스트 실행 및 결과 기록]
+    
+    M --> K
+    N --> C
+    O --> Q[💾 완성된 테스트케이스 관리]
+    P --> Q
+    
+    style A fill:#e3f2fd
+    style C fill:#fff3e0
+    style D fill:#f3e5f5
+    style E fill:#e8f5e8
+    style F fill:#e8f5e8
+    style H fill:#c8e6c9
+    style I fill:#ffcdd2
+    style J fill:#e1f5fe
+    style K fill:#f1f8e9
+    style Q fill:#e8f5e8
+```
+
+### 시스템 내부: 기술적 처리 흐름
 
 ```mermaid
 graph TD
@@ -619,6 +660,80 @@ gantt
     테스트 전략 수립      :100, 110
     케이스 생성          :110, 160
     품질 검증           :160, 180
+```
+
+### 단계별 상세 가이드
+
+#### 🎯 1단계: 프로젝트 준비
+```mermaid
+graph LR
+    A[🏠 메인 페이지] --> B[➕ '새 프로젝트' 클릭]
+    B --> C[📝 프로젝트명 입력<br/>예: 'QMS 비밀번호 정책 변경']
+    C --> D[💾 프로젝트 생성 완료]
+    D --> E[📁 프로젝트 페이지로 이동]
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#e8f5e8
+    style E fill:#e1f5fe
+```
+
+#### 🎯 2단계: PDF 업로드 및 AI 생성
+```mermaid
+graph TD
+    A[📄 PDF 파일 준비<br/>기획서/요구사항 문서] --> B[🎯 드래그&드롭 영역에 파일 놓기<br/>또는 '파일 선택' 클릭]
+    B --> C[📋 파일명 확인<br/>예: 'QMS_비밀번호정책.pdf']
+    C --> D[🚀 'AI로 테스트케이스 생성' 버튼 클릭]
+    
+    D --> E[⏳ 진행률 모달 팝업 표시]
+    E --> F[📊 0-50%: 명세화 단계<br/>'AI가 문서를 분석하고 명세서를 작성하고 있습니다...']
+    F --> G[🎉 50%: 명세화 완료<br/>'명세화 완료! 테스트케이스를 생성하고 있습니다...']
+    G --> H[📊 50-100%: 테스트케이스 생성<br/>'AI가 테스트케이스를 생성하고 있습니다...']
+    H --> I[✅ 100%: 생성 완료 팝업<br/>'테스트케이스 생성이 완료되었습니다.']
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style D fill:#f3e5f5
+    style F fill:#e8f5e8
+    style G fill:#c8e6c9
+    style H fill:#f3e5f5
+    style I fill:#c8e6c9
+```
+
+#### 🎯 3단계: 결과 확인 및 활용
+```mermaid
+graph TD
+    A[🎉 완료 팝업 '확인' 클릭] --> B[📋 테스트케이스 목록 자동 새로고침]
+    B --> C[👀 생성된 테스트케이스 확인<br/>15-20개 고품질 케이스]
+    
+    C --> D[📊 컬럼별 정보 확인]
+    D --> E[📝 설명: 테스트 개요]
+    D --> F[✅ 확인방법: 구체적 테스트 단계]
+    D --> G[🎯 기대결과: 예상되는 결과]
+    D --> H[📄 페이지번호: 기획서 페이지 참조]
+    D --> I[⭐ 우선순위: High/Medium/Low]
+    
+    E --> J{🔧 추가 작업}
+    F --> J
+    G --> J
+    H --> J
+    I --> J
+    
+    J -->|개별 수정| K[✏️ 테스트케이스 개별 편집<br/>체크박스 선택 → 수정 모드]
+    J -->|일괄 내보내기| L[📊 Excel 다운로드<br/>모든 컬럼 정보 포함]
+    J -->|테스트 실행| M[🧪 테스트 실행 세션 생성<br/>결과 기록 및 추적]
+    J -->|추가 생성| N[📄 다른 PDF로 추가 테스트케이스 생성]
+    
+    style A fill:#c8e6c9
+    style B fill:#e1f5fe
+    style C fill:#f1f8e9
+    style D fill:#fff3e0
+    style J fill:#f3e5f5
+    style K fill:#e8f5e8
+    style L fill:#e8f5e8
+    style M fill:#e8f5e8
+    style N fill:#fff3e0
 ```
 
 ### 🇰🇷 한국어 특화 패턴 인식 시스템
