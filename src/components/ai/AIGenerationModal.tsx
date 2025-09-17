@@ -221,6 +221,23 @@ export default function AIGenerationModal({
             if (initialProgressData.success) {
               console.log('📊 초기 진행률:', initialProgressData.data.progress + '%', initialProgressData.data.message);
               setProgress(initialProgressData.data.progress);
+              
+              // 초기 조회에서 100% 완료 상태인 경우 즉시 완료 처리
+              if (initialProgressData.data.progress >= 100 || initialProgressData.data.isComplete) {
+                console.log('✅ 초기 조회에서 작업 완료 감지 (100%)');
+                setProgress(100);
+                setIsGenerating(false);
+                onGenerationComplete();
+                
+                // 0개 테스트케이스 생성 시 특별 메시지
+                if (initialProgressData.data.result && initialProgressData.data.result.generatedCount === 0) {
+                  alert('메타데이터 전용 문서로 판단되어 테스트케이스를 생성하지 않았습니다.\n실제 기능이나 화면 명세가 포함된 문서를 업로드해주세요.');
+                } else {
+                  alert('테스트케이스 생성이 완료되었습니다.');
+                }
+                onClose();
+                return; // 폴링 시작하지 않고 종료
+              }
             }
           } else if (initialProgressResponse.status === 404) {
             // 초기 조회에서 404 = 이미 완료된 작업
@@ -271,7 +288,14 @@ export default function AIGenerationModal({
                   if (progressInfo.result && progressInfo.result.success) {
                     setIsGenerating(false);
                     onGenerationComplete();
-                    alert(`${progressInfo.result.generatedCount || result.generatedCount}개의 테스트케이스가 생성되었습니다.`);
+                    
+                    // 0개 테스트케이스 생성 시 특별 메시지
+                    const generatedCount = progressInfo.result.generatedCount || result.generatedCount || 0;
+                    if (generatedCount === 0) {
+                      alert('메타데이터 전용 문서로 판단되어 테스트케이스를 생성하지 않았습니다.\n실제 기능이나 화면 명세가 포함된 문서를 업로드해주세요.');
+                    } else {
+                      alert(`${generatedCount}개의 테스트케이스가 생성되었습니다.`);
+                    }
                     onClose();
                   }
                 }
@@ -298,6 +322,7 @@ export default function AIGenerationModal({
               console.log('✅ onGenerationComplete 호출');
               onGenerationComplete();
               console.log('🎉 완료 팝업 표시');
+              // 404 에러인 경우 결과를 알 수 없으므로 일반 메시지 표시
               alert('테스트케이스 생성이 완료되었습니다.');
               console.log('❌ 모달 닫기');
               onClose();
