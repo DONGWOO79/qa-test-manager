@@ -479,6 +479,148 @@ class SpecKitAnalyzer {
 - ⏱️ **처리 시간**: 2단계 AI 처리로 2-3분 소요 (고품질 보장)
 - 🎯 **최적화 팁**: PDF에 구체적인 기능 설명, 예외 상황, 비즈니스 규칙이 많을수록 더 정교한 테스트케이스 생성
 
+## 🔄 Spec Kit 워크플로우 다이어그램
+
+### 전체 처리 흐름
+
+```mermaid
+graph TD
+    A[📄 PDF 문서 업로드] --> B[📝 텍스트 추출]
+    B --> C[🖼️ 이미지 분석<br/>Vision AI]
+    C --> D[🔍 1단계: AI 명세화 전문가]
+    
+    D --> E[📋 상세 명세서 생성]
+    E --> F{🎯 기능 페이지<br/>존재 여부}
+    
+    F -->|메타데이터만| G[🚫 테스트케이스 생성 건너뜀]
+    F -->|기능 페이지 있음| H[🚀 2단계: 테스트케이스 전문가]
+    
+    H --> I[🧪 테스트케이스 생성<br/>15-20개]
+    I --> J[💾 데이터베이스 저장]
+    J --> K[✅ 완료 팝업 표시]
+    
+    G --> L[📊 빈 결과 반환]
+    
+    style A fill:#e1f5fe
+    style D fill:#fff3e0
+    style H fill:#f3e5f5
+    style I fill:#e8f5e8
+    style K fill:#e8f5e8
+```
+
+### 1단계: AI 명세화 전문가 상세 처리
+
+```mermaid
+graph LR
+    A[📄 PDF 텍스트] --> B[🔍 페이지별 분류]
+    B --> C[📊 기능 페이지 식별]
+    C --> D[📋 개별 페이지 명세화]
+    D --> E[🔗 통합 명세서 생성]
+    
+    E --> F[📝 구조화된 명세서]
+    F --> G[- 기능 개요<br/>- 상세 요구사항<br/>- 사용자 시나리오<br/>- 예외 처리<br/>- 데이터 명세<br/>- 인터페이스 명세]
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#fff3e0
+    style D fill:#fff3e0
+    style E fill:#fff3e0
+    style F fill:#e8f5e8
+    style G fill:#f1f8e9
+```
+
+### 2단계: 테스트케이스 전문가 상세 처리
+
+```mermaid
+graph TD
+    A[📋 상세 명세서] --> B[🎯 테스트 전략 수립]
+    B --> C[📊 테스트 타입 분산]
+    
+    C --> D[⚡ 기능 테스트<br/>60%]
+    C --> E[🎨 UI/UX 테스트<br/>20%]
+    C --> F[⚠️ 오류 처리 테스트<br/>15%]
+    C --> G[📏 경계값/성능 테스트<br/>5%]
+    
+    D --> H[🧪 테스트케이스 생성]
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I[🏷️ 우선순위 할당<br/>High/Medium/Low]
+    I --> J[🇰🇷 한국어 검증]
+    J --> K[💾 JSON 구조화]
+    K --> L[✅ 15-20개 완성]
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#fff8e1
+    style D fill:#e8f5e8
+    style E fill:#f3e5f5
+    style F fill:#ffebee
+    style G fill:#e0f2f1
+    style H fill:#f9fbe7
+    style I fill:#fce4ec
+    style J fill:#e1f5fe
+    style K fill:#f3e5f5
+    style L fill:#e8f5e8
+```
+
+### 한국어 패턴 인식 시스템
+
+```mermaid
+graph TD
+    A[📄 한국어 텍스트] --> B[🔍 패턴 매칭 엔진]
+    
+    B --> C[👤 사용자 스토리<br/>추출]
+    B --> D[🎯 시나리오<br/>추출]
+    B --> E[📏 비즈니스 규칙<br/>추출]
+    B --> F[⚠️ 예외 상황<br/>추출]
+    
+    C --> G["'사용자는 ~할 수 있다'<br/>'관리자는 ~해야 한다'<br/>'~기능이 필요하다'"]
+    D --> H["'시나리오: ~'<br/>'1. ~ 2. ~'<br/>'절차: ~'"]
+    E --> I["'~해야 한다'<br/>'필수: ~'<br/>'정책: ~'"]
+    F --> J["'오류: ~'<br/>'만약 ~하면'<br/>'예외: ~'"]
+    
+    G --> K[📊 신뢰도 계산]
+    H --> K
+    I --> K
+    J --> K
+    
+    K --> L[🎯 80% 이상<br/>고품질 명세서]
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#e8f5e8
+    style D fill:#f3e5f5
+    style E fill:#fff8e1
+    style F fill:#ffebee
+    style K fill:#f9fbe7
+    style L fill:#e8f5e8
+```
+
+### 실제 처리 시간 및 단계
+
+```mermaid
+gantt
+    title Spec Kit 처리 타임라인
+    dateFormat X
+    axisFormat %s초
+
+    section 파일 처리
+    텍스트 추출           :0, 10
+    이미지 분석          :10, 20
+
+    section 1단계: 명세화
+    페이지 분류          :20, 40
+    개별 페이지 명세화    :40, 80
+    통합 명세서 생성      :80, 100
+
+    section 2단계: 테스트케이스
+    테스트 전략 수립      :100, 110
+    케이스 생성          :110, 160
+    품질 검증           :160, 180
+```
+
 ### 🇰🇷 한국어 특화 패턴 인식 시스템
 
 #### 지원하는 한국어 문서 패턴들
