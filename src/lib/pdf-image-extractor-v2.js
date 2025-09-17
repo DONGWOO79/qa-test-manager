@@ -11,6 +11,15 @@ async function initPDFJS() {
         pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
         // 워커 설정
         pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+
+        // Node.js Canvas 호환성 설정
+        const { Canvas, Image } = require('canvas');
+        if (typeof globalThis.HTMLCanvasElement === 'undefined') {
+            globalThis.HTMLCanvasElement = Canvas;
+        }
+        if (typeof globalThis.HTMLImageElement === 'undefined') {
+            globalThis.HTMLImageElement = Image;
+        }
     }
     return pdfjsLib;
 }
@@ -49,6 +58,7 @@ async function extractImagesFromPDF(pdfPath, outputDir = './temp/pdf-images-v2')
         console.log(`PDF 로드 완료: ${pdfDocument.numPages}페이지`);
 
         const imageFiles = [];
+        let failedPages = 0;
 
         // 각 페이지를 이미지로 변환
         for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
@@ -58,17 +68,26 @@ async function extractImagesFromPDF(pdfPath, outputDir = './temp/pdf-images-v2')
                 // 페이지 로드
                 const page = await pdfDocument.getPage(pageNum);
 
-                // 페이지 크기 정보 (Google Vision API용 최적화된 해상도)
-                const viewport = page.getViewport({ scale: 2.5 }); // 2.5배 해상도로 최적화
+                // 페이지 크기 정보 (피그마 PDF 최적화)
+                const viewport = page.getViewport({ scale: 2.0 }); // 2배로 낮춰서 안정성 향상
 
-                // Canvas 생성
+                // Canvas 생성 (피그마 PDF 최적화)
                 const canvas = createCanvas(viewport.width, viewport.height);
                 const context = canvas.getContext('2d');
 
-                // 페이지를 Canvas에 렌더링
+                // 피그마 PDF 벡터 렌더링 최적화
+                context.imageSmoothingEnabled = false; // 벡터 PDF에서는 비활성화
+
+                // 명시적 배경 설정 (투명도 문제 해결)
+                context.fillStyle = '#FFFFFF';
+                context.fillRect(0, 0, viewport.width, viewport.height);
+
+                // PDF.js 렌더링 컨텍스트 - 피그마 PDF 특화
                 const renderContext = {
                     canvasContext: context,
-                    viewport: viewport
+                    viewport: viewport,
+                    intent: 'print', // 벡터 PDF를 위한 print 모드
+                    annotationMode: 0, // 주석 비활성화
                 };
 
                 await page.render(renderContext).promise;
@@ -77,18 +96,53 @@ async function extractImagesFromPDF(pdfPath, outputDir = './temp/pdf-images-v2')
                 const fileName = `page-${pageNum.toString().padStart(2, '0')}.jpg`;
                 const filePath = path.join(outputDir, fileName);
 
-                const buffer = canvas.toBuffer('image/jpeg', { quality: 0.9 }); // 90% 품질
+                const buffer = canvas.toBuffer('image/jpeg', { quality: 0.98 }); // 98% 품질로 최고품질 유지
                 fs.writeFileSync(filePath, buffer);
 
+                // 이미지 품질 검증
+                const sizeKB = Math.round(buffer.length / 1024);
+
+                // 빈 이미지 감지 (너무 작거나 동일한 크기)
+                if (buffer.length < 50 * 1024) { // 50KB 미만이면 빈 이미지 의심
+                    console.warn(`⚠️ 페이지 ${pageNum}: 이미지가 너무 작음 (${sizeKB}KB) - 빈 이미지 의심`);
+                } else {
+                    console.log(`✅ 페이지 ${pageNum} 저장 완료: ${filePath} (${sizeKB}KB)`);
+                }
+
                 imageFiles.push(filePath);
-                console.log(`페이지 ${pageNum} 저장 완료: ${filePath} (${Math.round(buffer.length / 1024)}KB)`);
 
             } catch (pageError) {
-                console.warn(`페이지 ${pageNum} 처리 실패:`, pageError.message);
+                console.warn(`⚠️ 페이지 ${pageNum} 건너뜀 (PDF.js 호환성 문제):`, pageError.message);
+
+                // 일반적인 PDF.js 호환성 오류는 간략하게 처리
+                if (pageError.message.includes('Image or Canvas expected')) {
+                    console.log(`   → PDF.js Node.js 환경 제한으로 인한 예상된 오류 (무시)`);
+                } else {
+                    console.error(`   → 예상치 못한 오류:`, pageError.message);
+                }
+
+                // 실패한 페이지 수 추적
+                failedPages++;
             }
         }
 
-        console.log(`총 ${imageFiles.length}개 이미지 추출 완료`);
+        // 추출 결과 요약
+        const successPages = imageFiles.length;
+        const totalPages = pdfDocument.numPages;
+        const successRate = ((successPages / totalPages) * 100).toFixed(1);
+
+        console.log(`\n📊 PDF 이미지 추출 완료:`);
+        console.log(`   ✅ 성공: ${successPages}/${totalPages}페이지 (${successRate}%)`);
+        console.log(`   ❌ 실패: ${failedPages}페이지 (PDF.js 호환성 문제)`);
+
+        if (successPages === 0) {
+            console.log(`   ⚠️ 모든 페이지 추출 실패 - Vision AI 분석 불가`);
+        } else if (successPages < totalPages / 2) {
+            console.log(`   ⚠️ 절반 이하 페이지만 성공 - 제한적 분석 예상`);
+        } else {
+            console.log(`   ✅ 충분한 페이지 추출 성공 - 정상 분석 가능`);
+        }
+
         return imageFiles;
 
     } catch (error) {

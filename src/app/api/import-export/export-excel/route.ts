@@ -21,7 +21,13 @@ export async function GET(request: NextRequest) {
           tc.priority,
           tc.status,
           tc.expected_result,
+          tc.test_strategy,
+          tc.pre_condition,
+          tc.preconditions,
+          tc.steps,
+          tc.page_numbers,
           tc.created_at,
+          tc.updated_at,
           tcat.name as category_name,
           p.name as project_name,
           u.username as created_by_name
@@ -37,13 +43,17 @@ export async function GET(request: NextRequest) {
         'TC ID': tc.id,
         '제목': tc.title,
         '설명': tc.description,
+        '사전조건': tc.preconditions || tc.pre_condition || '',
+        '확인방법': tc.test_strategy || tc.steps || '',
+        '기대결과': tc.expected_result,
+        '페이지번호': tc.page_numbers || '',
         '카테고리': tc.category_name,
         '프로젝트': tc.project_name,
         '우선순위': tc.priority,
         '상태': tc.status,
-        '기대결과': tc.expected_result,
         '작성자': tc.created_by_name,
-        '작성일': new Date(tc.created_at).toLocaleDateString('ko-KR')
+        '작성일': new Date(tc.created_at).toLocaleDateString('ko-KR'),
+        '수정일': new Date(tc.updated_at).toLocaleDateString('ko-KR')
       }));
 
       fileName = `qa-test-cases-${projectId || 'all'}-${new Date().toISOString().split('T')[0]}.xlsx`;

@@ -71,7 +71,7 @@ export default function ProjectDetail() {
       if (data.success) {
         setProject(data.data);
       } else {
-        console.error('Project not found');
+        consoerror('Project not found');
         router.push('/');
       }
     } catch (error) {

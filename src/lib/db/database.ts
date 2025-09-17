@@ -90,6 +90,12 @@ export function initializeDatabase() {
     // 필드가 이미 존재하면 무시
   }
 
+  try {
+    db.exec('ALTER TABLE test_cases ADD COLUMN page_numbers TEXT');
+  } catch (error) {
+    // 필드가 이미 존재하면 무시
+  }
+
   // 테스트 스텝 테이블
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_steps (

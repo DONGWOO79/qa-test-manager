@@ -1632,13 +1632,13 @@ async function callOllama(prompt: string, abortSignal?: AbortSignal): Promise<an
     console.error('Ollama API 호출 실패:', error);
     console.error('에러 타입:', error.constructor.name);
     console.error('에러 메시지:', error.message);
-
+    
     // 타임아웃 에러인 경우 더 자세한 로그
     if (error.message.includes('timeout') || error.message.includes('Timeout')) {
       console.error('🕐 Ollama 타임아웃 발생 - 모델이 응답하는데 시간이 너무 오래 걸립니다.');
       console.error('💡 해결 방법: 1) 더 작은 모델 사용, 2) 프롬프트 길이 줄이기, 3) Ollama 서버 재시작');
     }
-
+    
     return createTestCasesFromThinking('');
   }
 }
