@@ -39,22 +39,77 @@ export async function GET(request: NextRequest) {
         ORDER BY tc.created_at DESC
       `).all(projectId ? [projectId] : []);
 
-      data = testCases.map(tc => ({
-        'TC ID': tc.id,
-        '제목': tc.title,
-        '설명': tc.description,
-        '사전조건': tc.preconditions || tc.pre_condition || '',
-        '확인방법': tc.test_strategy || tc.steps || '',
-        '기대결과': tc.expected_result,
-        '페이지번호': tc.page_numbers || '',
-        '카테고리': tc.category_name,
-        '프로젝트': tc.project_name,
-        '우선순위': tc.priority,
-        '상태': tc.status,
-        '작성자': tc.created_by_name,
-        '작성일': new Date(tc.created_at).toLocaleDateString('ko-KR'),
-        '수정일': new Date(tc.updated_at).toLocaleDateString('ko-KR')
-      }));
+      data = testCases.map(tc => {
+        // JSON 문자열 파싱 함수
+        const parseJsonField = (field: string) => {
+          if (!field) return '';
+          try {
+            // JSON 배열인 경우 파싱하여 문자열로 변환
+            const parsed = JSON.parse(field);
+            if (Array.isArray(parsed)) {
+              return parsed.join('\n');
+            }
+            return parsed.toString();
+          } catch (error) {
+            // JSON이 아닌 경우 그대로 반환
+            return field;
+          }
+        };
+
+        // description에서 개별 필드 추출
+        let extractedPreconditions = tc.preconditions || tc.pre_condition || '';
+        let extractedSteps = tc.test_strategy || '';
+
+        // description에서 구조화된 내용 추출 시도
+        if (tc.description && tc.description.includes('사전 조건:')) {
+          const descLines = tc.description.split('\n');
+          let currentSection = '';
+          let tempPreconditions = '';
+          let tempSteps = '';
+
+          for (const line of descLines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('사전 조건:')) {
+              currentSection = 'preconditions';
+              tempPreconditions = trimmedLine.replace('사전 조건:', '').trim();
+            } else if (trimmedLine.startsWith('확인 방법:')) {
+              currentSection = 'steps';
+              tempSteps = trimmedLine.replace('확인 방법:', '').trim();
+            } else if (trimmedLine.startsWith('기대 결과:')) {
+              currentSection = '';
+            } else if (currentSection === 'preconditions' && trimmedLine) {
+              tempPreconditions += (tempPreconditions ? '\n' : '') + trimmedLine;
+            } else if (currentSection === 'steps' && trimmedLine) {
+              tempSteps += (tempSteps ? '\n' : '') + trimmedLine;
+            }
+          }
+
+          // 추출된 내용이 있으면 사용
+          if (tempPreconditions && !extractedPreconditions) {
+            extractedPreconditions = tempPreconditions;
+          }
+          if (tempSteps && !extractedSteps) {
+            extractedSteps = tempSteps;
+          }
+        }
+
+        return {
+          'TC ID': tc.id,
+          '제목': tc.title,
+          '설명': tc.description,
+          '사전조건': extractedPreconditions,
+          '확인방법': parseJsonField(tc.steps) || extractedSteps,
+          '기대결과': tc.expected_result,
+          '페이지번호': tc.page_numbers || '',
+          '카테고리': tc.category_name,
+          '프로젝트': tc.project_name,
+          '우선순위': tc.priority,
+          '상태': tc.status,
+          '작성자': tc.created_by_name,
+          '작성일': new Date(tc.created_at).toLocaleDateString('ko-KR'),
+          '수정일': new Date(tc.updated_at).toLocaleDateString('ko-KR')
+        };
+      });
 
       fileName = `qa-test-cases-${projectId || 'all'}-${new Date().toISOString().split('T')[0]}.xlsx`;
     } else if (type === 'statistics') {

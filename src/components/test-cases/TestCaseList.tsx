@@ -19,6 +19,7 @@ interface TestCase {
   created_at: string;
   page_numbers?: string;
   expected_result?: string;
+  preconditions?: string;
 }
 
 interface TestCaseListProps {
@@ -45,7 +46,9 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
   });
 
   // Column widths (percentage-based for responsive design)
-  const [columnWidths, setColumnWidths] = useState<number[]>([4, 12, 4, 18, 18, 18, 7, 7, 8, 6]);
+  // 컬럼 순서: 체크박스, 페이지번호, 설명, 사전조건, 확인방법, 기대결과, 우선순위, 상태, 생성일, 작업
+  // 카테고리 컬럼 제거, 사전조건 컬럼 추가
+  const [columnWidths, setColumnWidths] = useState<number[]>([4, 6, 20, 16, 18, 18, 7, 7, 8, 6]);
   const [isResizing, setIsResizing] = useState<number | null>(null);
   const [startX, setStartX] = useState<number>(0);
   const [startWidth, setStartWidth] = useState<number>(0);
@@ -684,10 +687,15 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
               />
             </div>
             <div style={{ width: `${columnWidths[1]}%` }} className="text-center px-2 border-r border-gray-300">
-              <span className="text-sm font-medium text-gray-500">카테고리</span>
-            </div>
-            <div style={{ width: `${columnWidths[2]}%` }} className="text-center px-2 border-r border-gray-300">
               <span className="text-sm font-medium text-gray-500">페이지</span>
+            </div>
+            <div
+              style={{ width: `${columnWidths[2]}%` }}
+              className={`text-center px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                }`}
+              onMouseDown={!isEditing ? (e) => handleResizeStart(e, 2) : undefined}
+            >
+              <span className="text-sm font-medium text-gray-500">설명</span>
             </div>
             <div
               style={{ width: `${columnWidths[3]}%` }}
@@ -695,7 +703,7 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                 }`}
               onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
             >
-              <span className="text-sm font-medium text-gray-500">설명</span>
+              <span className="text-sm font-medium text-gray-500">사전조건</span>
             </div>
             <div
               style={{ width: `${columnWidths[4]}%` }}
@@ -741,24 +749,8 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                   />
                 </div>
 
-                {/* Category */}
-                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
-                  {isEditing && selectedTestCases.has(testCase.id) ? (
-                    <input
-                      type="text"
-                      value={editingData[testCase.id]?.category || testCase.category}
-                      onChange={(e) => handleEditField(testCase.id, 'category', e.target.value)}
-                      className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  ) : (
-                    <span className="text-sm text-gray-500 truncate">
-                      {testCase.category_name || testCase.category || '-'}
-                    </span>
-                  )}
-                </div>
-
                 {/* Page Numbers */}
-                <div style={{ width: `${columnWidths[2]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
+                <div style={{ width: `${columnWidths[1]}%` }} className="flex justify-center items-center px-2 border-r border-gray-300">
                   <span className="text-xs text-gray-500">
                     {testCase.page_numbers || '-'}
                   </span>
@@ -766,10 +758,10 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
 
                 {/* Description */}
                 <div
-                  style={{ width: `${columnWidths[3]}%` }}
+                  style={{ width: `${columnWidths[2]}%` }}
                   className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
                     }`}
-                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
+                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 2) : undefined}
                 >
                   {/* Content area */}
                   <div className="flex flex-1">
@@ -827,6 +819,71 @@ export default function TestCaseList({ projectId }: TestCaseListProps) {
                               }}
                             >
                               {pureDescription}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preconditions */}
+                <div
+                  style={{ width: `${columnWidths[3]}%` }}
+                  className={`flex px-2 border-r border-gray-300 ${!isEditing ? 'cursor-col-resize hover:border-blue-500 transition-colors' : ''
+                    }`}
+                  onMouseDown={!isEditing ? (e) => handleResizeStart(e, 3) : undefined}
+                >
+                  {/* Content area */}
+                  <div className="flex flex-1">
+                    {!isEditing && (
+                      <button
+                        onClick={() => toggleRowExpansion(testCase.id)}
+                        className="p-1 hover:bg-gray-100 rounded flex-shrink-0 mt-1"
+                      >
+                        {expandedRows.has(testCase.id) ? (
+                          <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                        )}
+                      </button>
+                    )}
+                    <div className={isEditing && selectedTestCases.has(testCase.id) ? "flex-1" : "flex-1 ml-2"}>
+                      {(() => {
+                        // preconditions 필드를 우선 사용, 없으면 description에서 파싱
+                        const preconditions = (testCase as any).preconditions || parseDescription(testCase.description).preCondition || '';
+
+                        if (isEditing && selectedTestCases.has(testCase.id)) {
+                          return (
+                            <textarea
+                              defaultValue={preconditions}
+                              onChange={(e) => handleEditField(testCase.id, 'preCondition', e.target.value)}
+                              className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 resize-none"
+                              rows={3}
+                              placeholder="사전조건을 입력하세요..."
+                            />
+                          );
+                        } else if (!expandedRows.has(testCase.id)) {
+                          return (
+                            <span
+                              className="text-sm text-gray-600 leading-relaxed"
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                lineHeight: '1.4'
+                              }}
+                            >
+                              {preconditions}
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                              {preconditions}
                             </div>
                           );
                         }

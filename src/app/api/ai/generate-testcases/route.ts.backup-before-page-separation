@@ -8,9 +8,6 @@ import { progressStore } from '@/lib/progress-store';
 // Google Cloud Vision API
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-// PDF 페이지별 처리를 위한 추가 import (타입 선언 우회)
-const pdfParse = eval('require')('pdf-parse');
-
 // Spec Kit 관련 import
 import {
   SpecKitSpecification,
@@ -22,132 +19,6 @@ import { SpecKitGenerator, SpecKitValidator } from '@/lib/spec-kit/spec-kit-util
 import { SPEC_KIT_CONFIG } from '@/lib/spec-kit/spec-kit-config';
 
 const dbPath = path.join(process.cwd(), 'database.db');
-
-// 페이지별 텍스트 추출을 위한 인터페이스
-interface ExtractedPage {
-  pageNumber: number;
-  content: string;
-  source: 'text_extraction' | 'text_splitting' | 'needs_vision_ai';
-  charCount: number;
-}
-
-/**
- * 🔄 하이브리드 페이지 추출: PDF 파서 + Vision AI 백업
- * 텍스트 PDF와 이미지 PDF 모두 처리 가능
- */
-async function extractPagesFromPDF(
-  buffer: Buffer,
-  fileName: string,
-  progressTracker: ProgressTracker
-): Promise<ExtractedPage[]> {
-  console.log(`📄 하이브리드 PDF 페이지 분리 시작: ${fileName}`);
-
-  try {
-    // 1단계: PDF 기본 정보 추출
-    const pdfData = await pdfParse(buffer);
-    const totalPages = pdfData.numpages;
-    const totalText = pdfData.text || '';
-
-    console.log(`📊 PDF 정보: ${totalPages}페이지, 전체 텍스트 ${totalText.length}자`);
-
-    const pages: ExtractedPage[] = [];
-
-    // 2단계: 페이지별 텍스트 추출 시도
-    // 현재 pdf-parse는 페이지별 추출을 직접 지원하지 않으므로
-    // 텍스트 길이 기반으로 균등 분할하는 방식 사용
-
-    if (totalText.length > 100 && totalPages > 1) {
-      console.log(`📝 텍스트 기반 페이지 분할 시작 (${totalPages}페이지)`);
-
-      // 평균 문자 수 계산
-      const avgCharsPerPage = Math.ceil(totalText.length / totalPages);
-      console.log(`📊 페이지당 평균 문자 수: ${avgCharsPerPage}자`);
-
-      // 페이지별 텍스트 분할 - 원본 PDF 페이지 번호 유지
-      for (let i = 0; i < totalPages; i++) {
-        const startIdx = i * avgCharsPerPage;
-        const endIdx = Math.min((i + 1) * avgCharsPerPage, totalText.length);
-        const pageText = totalText.slice(startIdx, endIdx).trim();
-
-        // 원본 PDF의 실제 페이지 번호 사용 (1부터 시작하지만 원본 기준)
-        const originalPageNumber = i + 1;
-
-        if (pageText.length > 20) { // 최소 의미있는 텍스트
-          pages.push({
-            pageNumber: originalPageNumber, // 원본 PDF 페이지 번호 사용
-            content: pageText,
-            source: 'text_splitting',
-            charCount: pageText.length
-          });
-          console.log(`✅ 원본 페이지 ${originalPageNumber}: 텍스트 분할 완료 (${pageText.length}자)`);
-        } else {
-          console.log(`⚠️ 원본 페이지 ${originalPageNumber}: 텍스트 부족, Vision AI 필요`);
-          pages.push({
-            pageNumber: originalPageNumber, // 원본 PDF 페이지 번호 사용
-            content: '',
-            source: 'needs_vision_ai',
-            charCount: 0
-          });
-        }
-      }
-    } else {
-      console.log(`📄 단일 페이지로 처리 (총 ${totalText.length}자)`);
-      // 단일 페이지도 실제 PDF 페이지 수를 고려하여 처리
-      // 텍스트 길이 기반으로 페이지 수 추정 (2000자 ≈ 1페이지)
-      const estimatedPages = Math.max(1, Math.ceil(totalText.length / 2000));
-      console.log(`📊 추정 페이지 수: ${estimatedPages}페이지 (단일 처리)`);
-
-      if (estimatedPages === 1) {
-        // 실제로 단일 페이지인 경우
-        pages.push({
-          pageNumber: 1,
-          content: totalText,
-          source: 'text_extraction',
-          charCount: totalText.length
-        });
-      } else {
-        // 여러 페이지로 추정되는 경우 균등 분할
-        for (let pageNum = 1; pageNum <= estimatedPages; pageNum++) {
-          const startIdx = Math.floor((pageNum - 1) * totalText.length / estimatedPages);
-          const endIdx = Math.floor(pageNum * totalText.length / estimatedPages);
-          const pageContent = totalText.slice(startIdx, endIdx).trim();
-
-          pages.push({
-            pageNumber: pageNum,
-            content: pageContent || totalText, // 빈 내용이면 전체 사용
-            source: 'text_splitting_single',
-            charCount: pageContent.length
-          });
-        }
-        console.log(`✅ 단일 텍스트를 ${estimatedPages}페이지로 분할 완료`);
-      }
-    }
-
-    console.log(`🎯 페이지 추출 완료: ${pages.length}개 페이지`);
-    pages.forEach(page => {
-      console.log(`  - 페이지 ${page.pageNumber}: ${page.source} (${page.charCount}자)`);
-    });
-
-    return pages;
-
-  } catch (error) {
-    console.error(`❌ 페이지 추출 실패:`, (error as Error).message);
-
-    // 폴백: 전체 텍스트를 단일 페이지로 처리
-    try {
-      const pdfData = await pdfParse(buffer);
-      return [{
-        pageNumber: 1,
-        content: pdfData.text || '',
-        source: 'text_extraction',
-        charCount: (pdfData.text || '').length
-      }];
-    } catch (fallbackError) {
-      console.error(`❌ 폴백 추출도 실패:`, (fallbackError as Error).message);
-      return [];
-    }
-  }
-}
 
 // 진행률 추적 시스템
 interface ProgressStep {
@@ -522,127 +393,82 @@ async function create3PageChunkTestCasesWithAI(
   imageAnalysis: string,
   projectName: string,
   progressTracker: ProgressTracker,
-  abortSignal: AbortSignal,
-  pdfBuffer?: Buffer,
-  fileName?: string
+  abortSignal: AbortSignal
 ): Promise<{ testCases: any[], totalGenerated: number }> {
-  console.log('🚀 개선된 3페이지 청크 기반 AI 분석 시작...');
+  console.log('🚀 3페이지 청크 기반 AI 분석 시작...');
 
-  let extractedPages: ExtractedPage[] = [];
+  // imageAnalysis에서 페이지별 내용 분리
+  const pageContents: string[] = [];
+  const pageNumbers: number[] = [];
 
-  // 🔄 1단계: 하이브리드 페이지 추출 시도
-  if (pdfBuffer && fileName) {
-    console.log('🔄 하이브리드 페이지 추출 시스템 사용');
-    try {
-      extractedPages = await extractPagesFromPDF(pdfBuffer, fileName, progressTracker);
-      console.log(`✅ 하이브리드 추출 완료: ${extractedPages.length}개 페이지`);
-    } catch (error) {
-      console.error('❌ 하이브리드 추출 실패, 기존 방식으로 폴백:', (error as Error).message);
-      extractedPages = [];
+  if (imageAnalysis && imageAnalysis.includes('[페이지')) {
+    // 이미지 분석 결과를 페이지별로 분리
+    const pageMatches = imageAnalysis.split(/\[페이지 (\d+)\]/);
+    for (let i = 1; i < pageMatches.length; i += 2) {
+      const pageNum = parseInt(pageMatches[i]);
+      const content = pageMatches[i + 1]?.trim();
+      if (content) {
+        pageNumbers.push(pageNum);
+        pageContents.push(content);
+      }
     }
   }
 
-  // 🔄 2단계: 폴백 - 기존 페이지 분리 방식
-  if (extractedPages.length === 0) {
-    console.log('🔄 기존 페이지 분리 방식 사용');
-    const pageContents: string[] = [];
-    const pageNumbers: number[] = [];
-
-    if (imageAnalysis && imageAnalysis.includes('[페이지')) {
-      // 이미지 분석 결과를 페이지별로 분리
-      const pageMatches = imageAnalysis.split(/\[페이지 (\d+)\]/);
-      for (let i = 1; i < pageMatches.length; i += 2) {
-        const pageNum = parseInt(pageMatches[i]);
-        const content = pageMatches[i + 1]?.trim();
-        if (content) {
+  // 텍스트에서도 페이지 정보가 있다면 활용
+  if (extractedText && extractedText.includes('[페이지')) {
+    const textPageMatches = extractedText.split(/\[페이지 (\d+)\]/);
+    for (let i = 1; i < textPageMatches.length; i += 2) {
+      const pageNum = parseInt(textPageMatches[i]);
+      const content = textPageMatches[i + 1]?.trim();
+      if (content) {
+        const existingIndex = pageNumbers.findIndex(num => num === pageNum);
+        if (existingIndex >= 0) {
+          pageContents[existingIndex] += '\n\n=== 추가 텍스트 ===\n' + content;
+        } else {
           pageNumbers.push(pageNum);
           pageContents.push(content);
         }
       }
     }
-
-    // 텍스트에서도 페이지 정보가 있다면 활용
-    if (extractedText && extractedText.includes('[페이지')) {
-      const textPageMatches = extractedText.split(/\[페이지 (\d+)\]/);
-      for (let i = 1; i < textPageMatches.length; i += 2) {
-        const pageNum = parseInt(textPageMatches[i]);
-        const content = textPageMatches[i + 1]?.trim();
-        if (content) {
-          const existingIndex = pageNumbers.findIndex(num => num === pageNum);
-          if (existingIndex >= 0) {
-            pageContents[existingIndex] += '\n\n=== 추가 텍스트 ===\n' + content;
-          } else {
-            pageNumbers.push(pageNum);
-            pageContents.push(content);
-          }
-        }
-      }
-    }
-
-    // 페이지별 내용이 분리되지 않았다면 실제 PDF 페이지 수 기반으로 처리
-    if (pageContents.length === 0) {
-      console.log('📄 페이지 분리 불가 - PDF 페이지 수 기반으로 처리');
-      const combinedContent = imageAnalysis ?
-        `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}` :
-        extractedText;
-
-      // PDF 페이지 수를 추정하거나 기본값 사용
-      // 텍스트 길이 기반으로 페이지 수 추정 (대략 2000자 = 1페이지)
-      const estimatedPages = Math.max(1, Math.ceil(combinedContent.length / 2000));
-      console.log(`📊 추정 페이지 수: ${estimatedPages}페이지 (텍스트 길이: ${combinedContent.length}자)`);
-
-      // 추정된 페이지 수만큼 원본 페이지 번호 할당
-      for (let pageNum = 1; pageNum <= estimatedPages; pageNum++) {
-        pageNumbers.push(pageNum);
-        // 페이지별로 텍스트를 균등 분할
-        const startIdx = Math.floor((pageNum - 1) * combinedContent.length / estimatedPages);
-        const endIdx = Math.floor(pageNum * combinedContent.length / estimatedPages);
-        const pageContent = combinedContent.slice(startIdx, endIdx).trim();
-        pageContents.push(pageContent || combinedContent); // 빈 내용이면 전체 사용
-      }
-
-      console.log(`✅ 페이지 분할 완료: ${pageNumbers.join(', ')} 페이지로 처리`);
-    }
-
-    // ExtractedPage 형식으로 변환
-    extractedPages = pageNumbers.map((pageNum, index) => ({
-      pageNumber: pageNum,
-      content: pageContents[index],
-      source: 'text_extraction' as const,
-      charCount: pageContents[index].length
-    }));
   }
 
-  console.log(`📊 분석할 페이지 수: ${extractedPages.length}개`);
-  extractedPages.forEach(page => {
-    console.log(`  - 페이지 ${page.pageNumber}: ${page.source} (${page.charCount}자)`);
-  });
+  // 페이지별 내용이 분리되지 않았다면 전체 내용을 단일 페이지로 처리
+  if (pageContents.length === 0) {
+    console.log('📄 페이지 분리 불가 - 전체 내용을 단일 페이지로 처리');
+    const combinedContent = imageAnalysis ?
+      `${extractedText}\n\n=== 이미지 분석 결과 ===\n${imageAnalysis}` :
+      extractedText;
+    pageNumbers.push(1);
+    pageContents.push(combinedContent);
+  }
+
+  console.log(`📊 분석할 페이지 수: ${pageContents.length}개`);
 
   // 🏷️ 1단계: 각 페이지별로 AI 분류 (functional vs metadata)
   const functionalPages: Array<{ pageNumber: number, content: string }> = [];
-  const totalPages = extractedPages.length;
+  const totalPages = pageContents.length;
 
   for (let i = 0; i < totalPages; i++) {
-    const page = extractedPages[i];
+    const pageNumber = pageNumbers[i];
     const progressPercent = 25 + Math.round((i / totalPages) * 15); // 25-40% 구간
 
-    progressTracker.logStep(`CLASSIFY_${page.pageNumber}`, progressPercent, `페이지 ${page.pageNumber}/${totalPages} AI 분류 분석 중`);
+    progressTracker.logStep(`CLASSIFY_${pageNumber}`, progressPercent, `페이지 ${pageNumber}/${totalPages} AI 분류 분석 중`);
 
     try {
-      const classification = await classifyPageWithAI(page.pageNumber, page.content, projectName, abortSignal);
+      const classification = await classifyPageWithAI(pageNumber, pageContents[i], projectName, abortSignal);
 
-      console.log(`🏷️ 페이지 ${page.pageNumber} 분류: ${classification.classification} (${classification.shouldSkip ? '제외' : '포함'})`);
+      console.log(`🏷️ 페이지 ${pageNumber} 분류: ${classification.classification} (${classification.shouldSkip ? '제외' : '포함'})`);
       console.log(`📝 분류 이유: ${classification.reason}`);
 
       // functional 페이지만 수집
       if (!classification.shouldSkip && classification.classification === 'functional') {
         functionalPages.push({
-          pageNumber: page.pageNumber,
-          content: page.content
+          pageNumber,
+          content: pageContents[i]
         });
       }
     } catch (error) {
-      console.error(`❌ 페이지 ${page.pageNumber} 분류 실패:`, error);
+      console.error(`❌ 페이지 ${pageNumber} 분류 실패:`, error);
     }
   }
 
@@ -702,75 +528,11 @@ async function create3PageChunkTestCasesWithAI(
       const chunkPrompt = create3PageChunkPrompt(chunk.combinedContent, projectName, chunk.pageNumbers);
       console.log(`📏 청크 ${chunk.chunkIndex} 프롬프트 길이: ${chunkPrompt.length}자`);
 
-      const chunkResult = await callGemini(chunkPrompt, abortSignal, { timeout: 600000 }); // 10분 타임아웃
+      const chunkResult = await callOllama(chunkPrompt, abortSignal, { timeout: 600000 }); // 10분 타임아웃
       const chunkTestCases = chunkResult?.testCases || [];
 
-      console.log(`🔍 Gemini 응답 확인:`);
-      console.log(`  - chunkResult 존재: ${!!chunkResult}`);
-      console.log(`  - testCases 배열 길이: ${chunkTestCases.length}`);
-      console.log(`  - chunkResult 타입: ${typeof chunkResult}`);
-      if (chunkTestCases.length > 0) {
-        console.log(`  - 첫 번째 케이스 샘플:`, JSON.stringify(chunkTestCases[0], null, 2));
-      }
-
-      // 🔧 페이지 번호 스마트 교정 로직
-      console.log(`🔍 청크 ${chunk.chunkIndex} 디버깅:`);
-      console.log(`  - 청크 페이지 번호: [${chunk.pageNumbers.join(', ')}]`);
-      console.log(`  - 생성된 테스트케이스 수: ${chunkTestCases.length}개`);
-
-      const correctedTestCases = chunkTestCases.map((testCase: any, index: number) => {
-        console.log(`  - 테스트케이스 ${index + 1}: "${testCase.title}"`);
-
-        // 🔍 JSON 구조 검증
-        console.log(`🔍 JSON 구조 검증:`);
-        console.log(`  - title: ${!!testCase.title ? '✅' : '❌'} "${testCase.title}"`);
-        console.log(`  - description: ${!!testCase.description ? '✅' : '❌'} "${testCase.description?.substring(0, 50)}..."`);
-        console.log(`  - preconditions: ${!!testCase.preconditions ? '✅' : '❌'} "${testCase.preconditions?.substring(0, 50)}..."`);
-        console.log(`  - steps: ${Array.isArray(testCase.steps) && testCase.steps.length > 0 ? '✅' : '❌'} (${testCase.steps?.length || 0}개)`);
-        console.log(`  - expectedResult: ${!!testCase.expectedResult ? '✅' : '❌'} "${testCase.expectedResult?.substring(0, 50)}..."`);
-
-        // 🔧 preconditions 필드 보정
-        if (!testCase.preconditions || testCase.preconditions.trim() === '') {
-          console.log(`🔧 preconditions 필드 보정: 기본값 할당`);
-          testCase.preconditions = "시스템에 접근 가능한 상태이고 필요한 권한이 있어야 합니다";
-        }
-
-        // 🔥 강력한 페이지 번호 교정 - 무조건 청크 페이지 번호 사용
-        console.log(`🔧 페이지 번호 강제 교정 시작:`);
-        console.log(`  - 청크 페이지 번호: [${chunk.pageNumbers.join(', ')}]`);
-
-        if (testCase.pageNumbers) {
-          // AI가 반환한 페이지 번호를 배열로 변환
-          const aiPageNumbers = Array.isArray(testCase.pageNumbers)
-            ? testCase.pageNumbers
-            : testCase.pageNumbers.toString().split(',').map((n: string) => parseInt(n.trim()));
-
-          console.log(`  - AI 생성 페이지: [${aiPageNumbers.join(', ')}]`);
-
-          // 🚨 중요: AI가 생성한 번호와 청크 번호가 다르면 무조건 청크 번호 사용
-          const hasIncorrectNumbers = aiPageNumbers.some((num: number) => !chunk.pageNumbers.includes(num));
-
-          if (hasIncorrectNumbers) {
-            console.log(`🔧 페이지 번호 강제 교정: [${aiPageNumbers.join(', ')}] → [${chunk.pageNumbers.join(', ')}] (AI 번호 무시)`);
-            testCase.pageNumbers = [...chunk.pageNumbers]; // 청크의 모든 페이지 번호 사용
-          } else {
-            console.log(`✅ 페이지 번호 정확함: [${aiPageNumbers.join(', ')}] (교정 불필요)`);
-            // AI가 정확한 번호를 생성한 경우에만 그대로 사용
-            testCase.pageNumbers = aiPageNumbers;
-          }
-        } else {
-          // 페이지 번호가 없는 경우 청크의 모든 페이지 번호 할당
-          console.log(`🔧 페이지 번호 할당: [] → [${chunk.pageNumbers.join(', ')}] (번호 없음)`);
-          testCase.pageNumbers = [...chunk.pageNumbers];
-        }
-
-        console.log(`  - 최종 페이지 번호: [${testCase.pageNumbers.join(', ')}]`);
-        console.log(`🔧 페이지 번호 강제 교정 완료\n`);
-        return testCase;
-      });
-
-      console.log(`✅ 청크 ${chunk.chunkIndex} 완료: ${correctedTestCases.length}개 테스트케이스 생성`);
-      allTestCases.push(...correctedTestCases);
+      console.log(`✅ 청크 ${chunk.chunkIndex} 완료: ${chunkTestCases.length}개 테스트케이스 생성`);
+      allTestCases.push(...chunkTestCases);
 
     } catch (error) {
       console.error(`❌ 청크 ${chunk.chunkIndex} 처리 실패:`, error);
@@ -797,96 +559,41 @@ function create3PageChunkPrompt(chunkContent: string, projectName: string, pageN
   return `당신은 소프트웨어 테스트 전문가입니다.
 다음은 ${projectName} 프로젝트의 ${pageNumbers.length}개 페이지(페이지 ${pageNumbers.join(', ')})에서 추출한 실제 기능 명세입니다.
 
-**🚨 중요 지침 - 반드시 준수해주세요! 🚨**
-1. **모든 출력은 반드시 한국어로 작성**
-2. **영어 단어 사용 절대 금지** (Button, Toggle, Agree 등)
-3. **실제 앱 UI 용어 사용**: "버튼", "체크박스", "동의함", "계속 진행"
-4. **한국어 문장으로 자연스럽게 작성**
-
 **분석 대상 페이지**: ${pageNumbers.join(', ')}
 **문서 내용**:
 ${chunkContent}
 
-**목표**: 이 ${pageNumbers.length}개 페이지의 내용을 바탕으로 **15-25개의 구체적인 테스트케이스**를 **한국어로** 생성하세요.
+**목표**: 이 ${pageNumbers.length}개 페이지의 내용을 바탕으로 **15-25개의 구체적인 테스트케이스**를 생성하세요.
 
 **핵심 원칙**:
 ✅ **문서 기반**: 위 내용에서 실제로 언급된 기능만 테스트
 ✅ **페이지 정보 포함**: pageNumbers 필드에 관련 페이지 번호 명시
 ✅ **구체적 시나리오**: 일반적이지 않고 문서 특화된 테스트케이스
 ✅ **다양한 카테고리**: function, ui, data, integration, validation 등
-✅ **한국어 작성**: 모든 필드를 한국어로 작성
 
 **중요 제약사항**:
 🚫 **페이지 번호는 pageNumbers 필드에만**: title, description, steps 등에는 페이지 번호 포함 금지
 🚫 **문서에 없는 내용 금지**: 추측하지 말고 문서 내용만 활용
 🚫 **일반적 테스트 금지**: "${projectName} 특화" 테스트케이스만 생성
-🚫 **영어 사용 금지**: title, description, steps, expectedResult 모두 한국어로 작성
-
-**🔥 페이지 번호 검증 - 매우 중요! 🔥**
-- **반드시 다음 페이지 번호만 사용하세요**: [${pageNumbers.join(', ')}]
-- **pageNumbers 필드에는 위 번호 중에서만 선택하세요**
-- **절대로 1,2,3이나 다른 번호를 사용하지 마세요**
-- **올바른 예시**: "pageNumbers": [${pageNumbers[0]}] 또는 "pageNumbers": [${pageNumbers.join(', ')}]
-- **잘못된 예시**: "pageNumbers": [1, 2, 3] ← 절대 금지!
-
-**검증 규칙**:
-✅ **올바른 페이지 번호**: ${pageNumbers.join(', ')} 중에서만 선택
-❌ **금지된 페이지 번호**: 1, 2, 4, 5, 6, 9, 10 등 다른 모든 번호
-
-**다시 한번 강조**:
-이 청크는 원본 문서의 페이지 ${pageNumbers.join(', ')}에서 추출한 내용입니다.
-pageNumbers 필드에는 반드시 ${pageNumbers.join(', ')} 중에서만 사용하세요!
-
-**🚨 JSON 구조 요구사항 - 매우 중요! 🚨**
-
-**반드시 포함해야 할 필수 필드들**:
-1. **title**: 테스트케이스 제목만 (간결하게, 한 줄)
-2. **description**: 테스트 목적만 (간단히, 한 줄)  
-3. **preconditions**: 사전조건 (반드시 포함! 비어있으면 안됨!)
-4. **steps**: 실행 단계 (배열 형태, 1단계씩 나누어서)
-5. **expectedResult**: 예상결과 (구체적으로)
-
-**🔥 preconditions 필드 - 절대 빼먹지 마세요! 🔥**
-- **반드시 포함**: 모든 테스트케이스에 preconditions 필드 필수
-- **비어있으면 안됨**: 빈 문자열("")이나 null 금지
-- **구체적으로 작성**: "로그인된 상태", "데이터가 준비된 상태" 등
-- **예시**: "GOLFVX FMS에 로그인된 상태이고 예약 데이터가 존재해야 합니다"
-
-**❌ 절대 금지사항**:
-- description에 사전조건 포함 금지
-- description에 확인방법 포함 금지  
-- description에 기대결과 포함 금지
-- preconditions 필드 누락 금지
-
-**✅ 올바른 구조**:
-- 각 내용을 정확한 필드에만 작성
-- preconditions는 반드시 별도 필드에 구체적으로 작성
 
 **출력 형식**: 반드시 완벽한 JSON 형식으로만 응답하세요.
 {
-  "thinking": "페이지 ${pageNumbers.join(', ')}에서 확인된 주요 기능들과 테스트 접근법 분석 (한국어로)",
+  "thinking": "페이지 ${pageNumbers.join(', ')}에서 확인된 주요 기능들과 테스트 접근법 분석",
   "testCases": [
     {
-      "title": "예약 취소 메시지 발송 검증",
-      "description": "예약 취소 시 안내 메시지 발송 기능을 검증합니다",
-      "preconditions": "GOLFVX FMS에 로그인된 상태이고 예약이 완료되어 있으며 사용자 연락처 정보가 등록되어 있어야 합니다",
-      "steps": [
-        "1. 예약 관리 화면에서 취소할 예약을 선택합니다", 
-        "2. 예약 취소 버튼을 클릭합니다", 
-        "3. 취소 확인 팝업에서 확인 버튼을 클릭합니다"
-      ],
-      "expectedResult": "예약이 취소되고 등록된 휴대폰 번호로 취소 안내 메시지가 발송됩니다",
-      "priority": "high",
-      "category": "function",
-      "pageNumbers": [${pageNumbers[0]}]
+      "title": "구체적이고 명확한 테스트 제목",
+      "description": "이 테스트의 목적과 검증 내용",
+      "preconditions": "테스트 실행 전 필요한 조건들",
+      "steps": ["1. 구체적인 실행 단계", "2. 다음 단계", "3. 검증 단계"],
+      "expectedResult": "예상되는 구체적인 결과",
+      "priority": "high|medium|low|critical",
+      "category": "function|ui|data|integration|validation|security|performance",
+      "pageNumbers": [${pageNumbers.join(', ')}]
     }
   ]
 }
 
-**🚨 중요**: 
-- 모든 필드를 한국어로 작성하세요
-- 영어 단어 사용 금지 (Button → 버튼, Toggle → 전환, Agree → 동의)
-- 다른 설명 없이 오직 JSON만 출력하세요!`;
+**🚨 중요**: 다른 설명 없이 오직 JSON만 출력하세요!`;
 }
 
 /**
@@ -1952,55 +1659,50 @@ ${combinedContent}
 **다시 한번 강조: 모든 필드를 한국어로 작성하고, 문서 내용을 정확히 반영한 테스트 케이스를 생성해주세요.**`;
 }
 
-async function callGemini(prompt: string, abortSignal?: AbortSignal, options?: { timeout?: number }): Promise<any> {
+async function callOllama(prompt: string, abortSignal?: AbortSignal, options?: { timeout?: number }): Promise<any> {
   try {
-    console.log('Google Gemini API 호출 시작');
+    console.log('Ollama API 호출 시작');
     console.log('프롬프트 길이:', prompt.length);
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + process.env.GOOGLE_API_KEY, {
+    const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
+        model: 'gpt-oss:20b',
+        prompt: prompt,
+        stream: false,
+        options: {
           temperature: 0.3,
-          topP: 0.9,
-          maxOutputTokens: 8192,
-          responseMimeType: "text/plain",
+          top_p: 0.9,
+          max_tokens: 4000,
+          num_ctx: 8192, // 컨텍스트 크기 증가
         }
       }),
-      signal: abortSignal || AbortSignal.timeout(options?.timeout || 300000) // 기본 5분 (Gemini는 빠름)
+      signal: abortSignal || AbortSignal.timeout(options?.timeout || 1800000) // 기본 30분, options로 변경 가능
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      throw new Error(`Google Gemini API 오류: ${response.status} ${response.statusText} - ${errorData}`);
+      throw new Error(`Ollama API 오류: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('Google Gemini 응답 받음');
+    console.log('Ollama 응답 받음');
+    console.log('응답 길이:', data.response?.length || 0);
+    console.log('🔍 2단계 Ollama 응답 미리보기 (처음 1000자):');
+    console.log(`"${data.response?.substring(0, 1000)}..."`);
+    console.log('🔍 2단계 Ollama 응답 끝부분 (마지막 500자):');
+    console.log(`"...${data.response?.substring(Math.max(0, (data.response?.length || 0) - 500))}"`);
 
-    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('응답 길이:', generatedText.length);
-    console.log('🔍 Gemini 응답 미리보기 (처음 1000자):');
-    console.log(`"${generatedText.substring(0, 1000)}..."`);
-    console.log('🔍 Gemini 응답 끝부분 (마지막 500자):');
-    console.log(`"...${generatedText.substring(Math.max(0, generatedText.length - 500))}"`);
-
-    if (!generatedText) {
-      throw new Error('Google Gemini에서 응답을 받지 못했습니다.');
+    if (!data.response) {
+      throw new Error('Ollama에서 응답을 받지 못했습니다.');
     }
 
-    // JSON 파싱 시도 - Gemini 응답용으로 수정
+    // JSON 파싱 시도 - 개선된 로직
     try {
       // 1차 시도: 전체 JSON 매칭
-      const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+      const jsonMatch = data.response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         let jsonStr = jsonMatch[0];
         console.log('🔍 JSON 파싱 1차 시도 - 원본 JSON 길이:', jsonStr.length);
@@ -2013,7 +1715,7 @@ async function callGemini(prompt: string, abortSignal?: AbortSignal, options?: {
           console.log('❌ 1차 JSON 파싱 실패:', (firstError as Error).message);
 
           // 2차 시도: testCases 배열만 추출
-          const testCasesMatch = generatedText.match(/"testCases"\s*:\s*\[([\s\S]*?)\]/);
+          const testCasesMatch = data.response.match(/"testCases"\s*:\s*\[([\s\S]*?)\]/);
           if (testCasesMatch) {
             console.log('🔍 JSON 파싱 2차 시도 - testCases 배열 직접 추출');
             try {
@@ -2029,7 +1731,7 @@ async function callGemini(prompt: string, abortSignal?: AbortSignal, options?: {
           // 3차 시도: 각 테스트케이스를 개별적으로 추출
           console.log('🔍 JSON 파싱 3차 시도 - 개별 테스트케이스 추출');
           const individualCases = [];
-          const caseMatches = generatedText.match(/\{\s*"title"[\s\S]*?"category"[^}]*\}/g);
+          const caseMatches = data.response.match(/\{\s*"title"[\s\S]*?"category"[^}]*\}/g);
           if (caseMatches && caseMatches.length > 0) {
             console.log(`발견된 개별 케이스 수: ${caseMatches.length}`);
             for (let i = 0; i < caseMatches.length; i++) {
@@ -2049,11 +1751,11 @@ async function callGemini(prompt: string, abortSignal?: AbortSignal, options?: {
       }
 
       console.log('❌ 모든 JSON 파싱 시도 실패, thinking 필드에서 추출 시도');
-      return createTestCasesFromThinking(generatedText);
+      return createTestCasesFromThinking(data.response);
 
     } catch (parseError) {
       console.log('❌ JSON 파싱 전체 실패, thinking 필드에서 추출 시도:', (parseError as Error).message);
-      return createTestCasesFromThinking(generatedText);
+      return createTestCasesFromThinking(data.response);
     }
 
   } catch (error) {
@@ -2259,9 +1961,9 @@ async function processTestCaseGeneration(
     let specKitUsed = false;
 
     try {
-      // 🚀 새로운 방식: 3페이지 청크 기반 테스트케이스 직접 생성 (하이브리드 페이지 추출)
+      // 🚀 새로운 방식: 3페이지 청크 기반 테스트케이스 직접 생성
       console.log('🆕 3페이지 청크 기반 AI 분석 방식 사용');
-      const chunkResult = await create3PageChunkTestCasesWithAI(extractedText, imageAnalysis, projectName, progressTracker, abortSignal, buffer, file.name);
+      const chunkResult = await create3PageChunkTestCasesWithAI(extractedText, imageAnalysis, projectName, progressTracker, abortSignal);
 
       testCases = chunkResult.testCases;
       specKitUsed = true;
@@ -2283,7 +1985,7 @@ async function processTestCaseGeneration(
       progressTracker.logStep('SPEC_COMPLETE', 50, '📋 명세화 단계 완료 - 테스트케이스 생성 시작 (Fallback 방식)');
       progressTracker.logStep('AI_FALLBACK', 55, '기존 방식으로 테스트케이스 생성 중');
       const aiPrompt = createAIPrompt(extractedText, imageAnalysis);
-      aiResult = await callGemini(aiPrompt, abortSignal);
+      aiResult = await callOllama(aiPrompt, abortSignal);
       testCases = aiResult?.testCases || [];
       specKitUsed = false;
 
@@ -2366,17 +2068,10 @@ async function processTestCaseGeneration(
           // pageNumbers에서 실제 페이지 번호만 추출 (4,5,6,7,12,14 형태로)
           let cleanPageNumbers = '';
           if (testCase.pageNumbers) {
-            console.log(`🔍 DB 저장 전 페이지 번호 디버깅:`);
-            console.log(`  - 원본 testCase.pageNumbers:`, testCase.pageNumbers);
-            console.log(`  - toString() 결과:`, testCase.pageNumbers.toString());
-
             // 숫자만 추출해서 콤마로 연결
             const numbers = testCase.pageNumbers.toString().match(/\d+/g);
-            console.log(`  - match(/\\d+/g) 결과:`, numbers);
-
             if (numbers && numbers.length > 0) {
               cleanPageNumbers = numbers.join(',');
-              console.log(`  - 최종 cleanPageNumbers:`, cleanPageNumbers);
             }
           }
 
